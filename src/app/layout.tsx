@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gastos Meta Ads",
+  title: "Traffic RakeBet",
   description: "Painel de gastos de Meta Ads por BM e conta de anúncio",
 };
 

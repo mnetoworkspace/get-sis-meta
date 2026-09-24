@@ -209,7 +209,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
             <div>
-              <h1 className="text-lg font-semibold text-[var(--text)]">Gastos Meta Ads</h1>
+              <h1 className="text-lg font-semibold text-[var(--text)]">Traffic RakeBet</h1>
               <p className="text-xs text-[var(--text-muted)]">
                 Gastos consolidados por BM / conta de anúncio
               </p>

@@ -43,7 +43,7 @@ export default function LoginForm() {
         <div className="mb-6 flex flex-col items-center gap-3">
           <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={56} height={56} className="rounded-xl" />
           <div className="text-center">
-            <h1 className="text-lg font-semibold text-[var(--text)]">Gastos Meta Ads</h1>
+            <h1 className="text-lg font-semibold text-[var(--text)]">Traffic RakeBet</h1>
             <p className="text-xs text-[var(--text-muted)]">Entre para acessar o painel</p>
           </div>
         </div>
