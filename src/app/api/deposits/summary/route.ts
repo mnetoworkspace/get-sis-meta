@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase";
+import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
+import { bogotaDateBoundary } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";
 
@@ -16,23 +17,27 @@ export async function GET(request: Request) {
 
   const supabase = createSupabaseAdminClient();
 
-  let query = supabase
-    .from("deposits")
-    .select("amount, currency, is_ftd")
-    .eq("status", "COMPLETED")
-    .eq("test_user", false);
+  let data: DepositRow[];
+  try {
+    data = await fetchAllRows<DepositRow>((from, to) => {
+      let query = supabase
+        .from("deposits")
+        .select("amount, currency, is_ftd")
+        .eq("status", "COMPLETED")
+        .eq("test_user", false);
 
-  if (since) query = query.gte("created_at", `${since}T00:00:00`);
-  if (until) query = query.lte("created_at", `${until}T23:59:59`);
+      if (since) query = query.gte("created_at", bogotaDateBoundary(since, false));
+      if (until) query = query.lte("created_at", bogotaDateBoundary(until, true));
 
-  const { data, error } = await query.returns<DepositRow[]>();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+      return query.range(from, to).returns<DepositRow[]>();
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro desconhecido";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const byCurrency = new Map<string, { amount: number; count: number; ftdCount: number }>();
-  for (const row of data || []) {
+  for (const row of data) {
     const bucket = byCurrency.get(row.currency) || { amount: 0, count: 0, ftdCount: 0 };
     bucket.amount += Number(row.amount || 0);
     bucket.count += 1;

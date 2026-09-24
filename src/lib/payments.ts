@@ -12,6 +12,28 @@ export class PaymentsApiError extends Error {
   }
 }
 
+// A API/backoffice de pagamentos trabalha em horário de Bogotá (UTC-5, sem
+// horário de verão). Tratar created_at (armazenado em UTC) como se fosse
+// Bogotá sem esse ajuste desloca depósitos perto da meia-noite pro dia/hora
+// errado — e os limites since/until também precisam do mesmo offset pra
+// bater com o "summary.total" que a própria API/backoffice reporta.
+export const BOGOTA_OFFSET = "-05:00";
+
+export function bogotaDateBoundary(dateISO: string, endOfDay: boolean): string {
+  return `${dateISO}T${endOfDay ? "23:59:59.999" : "00:00:00"}${BOGOTA_OFFSET}`;
+}
+
+export function toBogotaDate(isoUtc: string): string {
+  const d = new Date(isoUtc);
+  d.setUTCHours(d.getUTCHours() - 5);
+  return d.toISOString().slice(0, 10);
+}
+
+export function toBogotaHour(isoUtc: string): number {
+  const d = new Date(isoUtc);
+  return (((d.getUTCHours() - 5) % 24) + 24) % 24;
+}
+
 export interface DepositRow {
   id: string;
   player_id: string;

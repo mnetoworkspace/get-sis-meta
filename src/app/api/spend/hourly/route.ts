@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase";
+import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -24,19 +24,22 @@ export async function GET(request: Request) {
 
   const supabase = createSupabaseAdminClient();
 
-  let query = supabase.from("insights_account_hourly").select("*, ad_accounts(bm_id)");
+  let rows: HourlyRow[];
+  try {
+    rows = await fetchAllRows<HourlyRow>((from, to) => {
+      let query = supabase.from("insights_account_hourly").select("*, ad_accounts(bm_id)");
 
-  if (since) query = query.gte("date", since);
-  if (until) query = query.lte("date", until);
-  if (adAccountId) query = query.eq("ad_account_id", adAccountId);
+      if (since) query = query.gte("date", since);
+      if (until) query = query.lte("date", until);
+      if (adAccountId) query = query.eq("ad_account_id", adAccountId);
 
-  const { data, error } = await query.returns<HourlyRow[]>();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+      return query.range(from, to).returns<HourlyRow[]>();
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro desconhecido";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  let rows = data || [];
   if (bmId) rows = rows.filter((r) => r.ad_accounts?.bm_id === bmId);
 
   // Agrega por hora do dia (0-23), somando todas as datas/contas do período.

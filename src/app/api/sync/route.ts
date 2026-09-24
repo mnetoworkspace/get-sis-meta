@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase";
+import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 import {
   fetchAccountDailyInsights,
   fetchAccountHourlyInsights,
@@ -305,15 +305,17 @@ export async function POST(request: Request) {
           const allExistingIds: string[] = [];
 
           for (const playerChunk of chunk(playerIds, 50)) {
-            const { data: existing, error: existingError } = await supabase
-              .from("deposits")
-              .select("id, player_id, created_at")
-              .in("player_id", playerChunk)
-              .eq("status", "COMPLETED");
+            const existing = await fetchAllRows<{ id: string; player_id: string; created_at: string }>(
+              (from, to) =>
+                supabase
+                  .from("deposits")
+                  .select("id, player_id, created_at")
+                  .in("player_id", playerChunk)
+                  .eq("status", "COMPLETED")
+                  .range(from, to),
+            );
 
-            if (existingError) throw existingError;
-
-            for (const d of existing || []) {
+            for (const d of existing) {
               allExistingIds.push(d.id);
               const curr = firstByPlayer.get(d.player_id);
               if (!curr || d.created_at < curr.created_at) firstByPlayer.set(d.player_id, d);
