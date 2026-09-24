@@ -12,6 +12,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
 import { TrafficTab } from "@/components/tables/TrafficTab";
 import { DepositsTab } from "@/components/tables/DepositsTab";
+import { AccountMultiSelect } from "@/components/ui/account-multi-select";
 
 type Tab = "bm" | "account" | "detailed" | "traffic" | "deposits";
 
@@ -83,7 +84,7 @@ export default function Dashboard() {
   const [since, setSince] = useState(daysAgoISO(30));
   const [until, setUntil] = useState(todayISO());
   const [bmFilter, setBmFilter] = useState("");
-  const [accountFilter, setAccountFilter] = useState("");
+  const [accountFilters, setAccountFilters] = useState<string[]>([]);
   const [bms, setBms] = useState<BmOption[]>([]);
   const [accounts, setAccounts] = useState<AdAccountOption[]>([]);
   const [bmRows, setBmRows] = useState<SpendRow[]>([]);
@@ -116,7 +117,7 @@ export default function Dashboard() {
     try {
       if (tab === "detailed") {
         const params = new URLSearchParams({ since, until });
-        if (accountFilter) params.set("ad_account_id", accountFilter);
+        if (accountFilters.length > 0) params.set("ad_account_ids", accountFilters.join(","));
         const res = await fetch(`/api/spend/detailed?${params.toString()}`);
         const json = await res.json();
         setDetailedRows(json.data || []);
@@ -128,7 +129,7 @@ export default function Dashboard() {
         setBmRows(json.data || []);
       } else {
         const params = new URLSearchParams({ since, until });
-        if (accountFilter) params.set("ad_account_id", accountFilter);
+        if (accountFilters.length > 0) params.set("ad_account_ids", accountFilters.join(","));
         const res = await fetch(`/api/spend/overview?${params.toString()}`);
         const json = await res.json();
         setAccountRows(json.data || []);
@@ -136,12 +137,18 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [tab, since, until, accountFilter, bmFilter]);
+  }, [tab, since, until, accountFilters, bmFilter]);
 
   const loadCompare = useCallback(async () => {
     const prev = previousPeriod(since, until);
     const filterParam: Record<string, string> =
-      tab === "bm" ? (bmFilter ? { bm_id: bmFilter } : {}) : accountFilter ? { ad_account_id: accountFilter } : {};
+      tab === "bm"
+        ? bmFilter
+          ? { bm_id: bmFilter }
+          : {}
+        : accountFilters.length > 0
+          ? { ad_account_ids: accountFilters.join(",") }
+          : {};
 
     async function fetchPeriod(s: string, u: string) {
       const params = new URLSearchParams({ since: s, until: u, ...filterParam });
@@ -161,7 +168,7 @@ export default function Dashboard() {
       previous: prevTotals.totals,
       currency: curr.currency || prevTotals.currency,
     });
-  }, [since, until, tab, accountFilter, bmFilter]);
+  }, [since, until, tab, accountFilters, bmFilter]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -239,14 +246,7 @@ export default function Dashboard() {
               ))}
             </select>
           ) : tab !== "traffic" && tab !== "deposits" ? (
-            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="input">
-              <option value="">Todas as contas</option>
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.business_managers?.name || acc.id})
-                </option>
-              ))}
-            </select>
+            <AccountMultiSelect accounts={accounts} selected={accountFilters} onChange={setAccountFilters} />
           ) : null}
 
           <div className="ml-auto flex flex-col items-end gap-1">

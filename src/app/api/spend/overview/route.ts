@@ -107,6 +107,7 @@ export async function GET(request: Request) {
   const since = searchParams.get("since");
   const until = searchParams.get("until");
   const adAccountId = searchParams.get("ad_account_id");
+  const adAccountIds = searchParams.get("ad_account_ids")?.split(",").filter(Boolean) ?? [];
   const bmId = searchParams.get("bm_id");
   const groupBy = searchParams.get("group_by") === "bm" ? "bm" : "account";
 
@@ -122,7 +123,8 @@ export async function GET(request: Request) {
 
       if (since) query = query.gte("date", since);
       if (until) query = query.lte("date", until);
-      if (adAccountId) query = query.eq("ad_account_id", adAccountId);
+      if (adAccountIds.length > 0) query = query.in("ad_account_id", adAccountIds);
+      else if (adAccountId) query = query.eq("ad_account_id", adAccountId);
 
       return query.range(from, to).returns<AccountDailyRow[]>();
     });
