@@ -3,11 +3,101 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+interface AccountDailyRow {
+  id: string;
+  ad_account_id: string;
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  reach: number | null;
+  frequency: number | null;
+  inline_link_clicks: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  ctr: number | null;
+  results: number | null;
+  result_type: string | null;
+  cost_per_result: number | null;
+  currency: string | null;
+  ad_accounts: {
+    name: string;
+    currency: string | null;
+    bm_id: string;
+    business_managers: { name: string } | null;
+  } | null;
+}
+
+function aggregateByBm(rows: AccountDailyRow[]) {
+  const groups = new Map<
+    string,
+    {
+      bm_id: string;
+      bm_name: string;
+      date: string;
+      spend: number;
+      impressions: number;
+      clicks: number;
+      results: number;
+      hasResults: boolean;
+      currency: string | null;
+    }
+  >();
+
+  for (const row of rows) {
+    const bmId = row.ad_accounts?.bm_id || "sem-bm";
+    const bmName = row.ad_accounts?.business_managers?.name || bmId;
+    const key = `${bmId}__${row.date}`;
+    const existing = groups.get(key);
+    const results = row.results ?? 0;
+
+    if (existing) {
+      existing.spend += Number(row.spend || 0);
+      existing.impressions += Number(row.impressions || 0);
+      existing.clicks += Number(row.clicks || 0);
+      existing.results += results;
+      existing.hasResults = existing.hasResults || row.results !== null;
+    } else {
+      groups.set(key, {
+        bm_id: bmId,
+        bm_name: bmName,
+        date: row.date,
+        spend: Number(row.spend || 0),
+        impressions: Number(row.impressions || 0),
+        clicks: Number(row.clicks || 0),
+        results,
+        hasResults: row.results !== null,
+        currency: row.currency,
+      });
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((g) => ({
+      id: `${g.bm_id}__${g.date}`,
+      bm_id: g.bm_id,
+      date: g.date,
+      spend: g.spend,
+      impressions: g.impressions,
+      clicks: g.clicks,
+      cpc: g.clicks > 0 ? g.spend / g.clicks : null,
+      cpm: g.impressions > 0 ? (g.spend / g.impressions) * 1000 : null,
+      ctr: g.impressions > 0 ? (g.clicks / g.impressions) * 100 : null,
+      results: g.hasResults ? g.results : null,
+      cost_per_result: g.hasResults && g.results > 0 ? g.spend / g.results : null,
+      currency: g.currency,
+      ad_accounts: { name: g.bm_name, currency: g.currency, bm_id: g.bm_id, business_managers: { name: g.bm_name } },
+    }))
+    .sort((a, b) => (a.date === b.date ? a.bm_id.localeCompare(b.bm_id) : b.date.localeCompare(a.date)));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const since = searchParams.get("since");
   const until = searchParams.get("until");
   const adAccountId = searchParams.get("ad_account_id");
+  const bmId = searchParams.get("bm_id");
+  const groupBy = searchParams.get("group_by") === "bm" ? "bm" : "account";
 
   const supabase = createSupabaseAdminClient();
 
@@ -20,11 +110,18 @@ export async function GET(request: Request) {
   if (until) query = query.lte("date", until);
   if (adAccountId) query = query.eq("ad_account_id", adAccountId);
 
-  const { data, error } = await query;
+  const { data, error } = await query.returns<AccountDailyRow[]>();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  let rows = data || [];
+  if (bmId) rows = rows.filter((r) => r.ad_accounts?.bm_id === bmId);
+
+  if (groupBy === "bm") {
+    return NextResponse.json({ data: aggregateByBm(rows) });
+  }
+
+  return NextResponse.json({ data: rows });
 }

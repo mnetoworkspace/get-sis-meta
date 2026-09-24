@@ -45,9 +45,14 @@ export interface InsightsAccountDaily {
   impressions: number;
   clicks: number;
   reach: number | null;
+  frequency: number | null;
+  inline_link_clicks: number | null;
   cpc: number | null;
   cpm: number | null;
   ctr: number | null;
+  results: number | null;
+  result_type: string | null;
+  cost_per_result: number | null;
   currency: string | null;
   synced_at: string;
 }
@@ -66,9 +71,14 @@ export interface InsightsAdDaily {
   impressions: number;
   clicks: number;
   reach: number | null;
+  frequency: number | null;
+  inline_link_clicks: number | null;
   cpc: number | null;
   cpm: number | null;
   ctr: number | null;
+  results: number | null;
+  result_type: string | null;
+  cost_per_result: number | null;
   currency: string | null;
   synced_at: string;
 }

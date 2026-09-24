@@ -3,11 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { RefreshCw, Settings } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatCurrency, formatNumber, daysAgoISO, todayISO } from "@/lib/format";
+import { useCallback, useEffect, useState } from "react";
+import { daysAgoISO, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
+import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
+import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTable";
 
-type Tab = "overview" | "detailed";
+type Tab = "bm" | "account" | "detailed";
 
 interface AdAccountOption {
   id: string;
@@ -16,39 +18,9 @@ interface AdAccountOption {
   business_managers?: { name: string } | null;
 }
 
-interface OverviewRow {
+interface BmOption {
   id: string;
-  ad_account_id: string;
-  date: string;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  cpc: number | null;
-  cpm: number | null;
-  ctr: number | null;
-  currency: string | null;
-  ad_accounts?: {
-    name: string;
-    currency: string | null;
-    business_managers?: { name: string } | null;
-  } | null;
-}
-
-interface DetailedRow {
-  id: string;
-  ad_account_id: string;
-  date: string;
-  campaign_name: string | null;
-  adset_name: string | null;
-  ad_name: string | null;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  cpc: number | null;
-  cpm: number | null;
-  ctr: number | null;
-  currency: string | null;
-  ad_accounts?: { name: string; currency: string | null } | null;
+  name: string;
 }
 
 interface SyncLog {
@@ -61,23 +33,33 @@ interface SyncLog {
   error_message: string | null;
 }
 
+const TABS: { key: Tab; label: string }[] = [
+  { key: "bm", label: "Por BM" },
+  { key: "account", label: "Por Conta" },
+  { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)" },
+];
+
 export default function Dashboard() {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("account");
   const [since, setSince] = useState(daysAgoISO(30));
   const [until, setUntil] = useState(todayISO());
-  const [accountFilter, setAccountFilter] = useState<string>("");
+  const [bmFilter, setBmFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [bms, setBms] = useState<BmOption[]>([]);
   const [accounts, setAccounts] = useState<AdAccountOption[]>([]);
-  const [overviewRows, setOverviewRows] = useState<OverviewRow[]>([]);
+  const [bmRows, setBmRows] = useState<SpendRow[]>([]);
+  const [accountRows, setAccountRows] = useState<SpendRow[]>([]);
   const [detailedRows, setDetailedRows] = useState<DetailedRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
 
-  const loadAccounts = useCallback(async () => {
-    const res = await fetch("/api/ad-accounts");
-    const json = await res.json();
-    setAccounts(json.data || []);
+  const loadFilters = useCallback(async () => {
+    const [accRes, bmRes] = await Promise.all([fetch("/api/ad-accounts"), fetch("/api/bms")]);
+    setAccounts((await accRes.json()).data || []);
+    const bmData = (await bmRes.json()).data || [];
+    setBms(bmData.map((b: { id: string; name: string }) => ({ id: b.id, name: b.name })));
   }, []);
 
   const loadLastSync = useCallback(async () => {
@@ -89,28 +71,35 @@ export default function Dashboard() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ since, until });
-      if (accountFilter) params.set("ad_account_id", accountFilter);
-
-      if (tab === "overview") {
-        const res = await fetch(`/api/spend/overview?${params.toString()}`);
-        const json = await res.json();
-        setOverviewRows(json.data || []);
-      } else {
+      if (tab === "detailed") {
+        const params = new URLSearchParams({ since, until });
+        if (accountFilter) params.set("ad_account_id", accountFilter);
         const res = await fetch(`/api/spend/detailed?${params.toString()}`);
         const json = await res.json();
         setDetailedRows(json.data || []);
+      } else if (tab === "bm") {
+        const params = new URLSearchParams({ since, until, group_by: "bm" });
+        if (bmFilter) params.set("bm_id", bmFilter);
+        const res = await fetch(`/api/spend/overview?${params.toString()}`);
+        const json = await res.json();
+        setBmRows(json.data || []);
+      } else {
+        const params = new URLSearchParams({ since, until });
+        if (accountFilter) params.set("ad_account_id", accountFilter);
+        const res = await fetch(`/api/spend/overview?${params.toString()}`);
+        const json = await res.json();
+        setAccountRows(json.data || []);
       }
     } finally {
       setLoading(false);
     }
-  }, [tab, since, until, accountFilter]);
+  }, [tab, since, until, accountFilter, bmFilter]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadAccounts();
+    loadFilters();
     loadLastSync();
-  }, [loadAccounts, loadLastSync]);
+  }, [loadFilters, loadLastSync]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -143,22 +132,12 @@ export default function Dashboard() {
     }
   }
 
-  const overviewTotal = useMemo(
-    () => overviewRows.reduce((sum, r) => sum + Number(r.spend || 0), 0),
-    [overviewRows],
-  );
-
-  const detailedTotal = useMemo(
-    () => detailedRows.reduce((sum, r) => sum + Number(r.spend || 0), 0),
-    [detailedRows],
-  );
-
   return (
     <div className="min-h-screen">
       <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
         <div className="page-shell flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <Image src="/logo-rakebet.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
+            <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
             <div>
               <h1 className="text-lg font-semibold text-[var(--text)]">Gastos Meta Ads</h1>
               <p className="text-xs text-[var(--text-muted)]">
@@ -177,25 +156,28 @@ export default function Dashboard() {
         <div className="mb-6 flex flex-wrap items-center gap-3 card p-4">
           <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
 
-          <select
-            value={accountFilter}
-            onChange={(e) => setAccountFilter(e.target.value)}
-            className="input"
-          >
-            <option value="">Todas as contas</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name} ({acc.business_managers?.name || acc.id})
-              </option>
-            ))}
-          </select>
+          {tab === "bm" ? (
+            <select value={bmFilter} onChange={(e) => setBmFilter(e.target.value)} className="input">
+              <option value="">Todos os BMs</option>
+              {bms.map((bm) => (
+                <option key={bm.id} value={bm.id}>
+                  {bm.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="input">
+              <option value="">Todas as contas</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({acc.business_managers?.name || acc.id})
+                </option>
+              ))}
+            </select>
+          )}
 
           <div className="ml-auto flex flex-col items-end gap-1">
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="btn-primary flex items-center gap-2"
-            >
+            <button onClick={handleSync} disabled={syncing} className="btn-primary flex items-center gap-2">
               <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
               {syncing ? "Sincronizando..." : "Sincronizar agora"}
             </button>
@@ -211,149 +193,30 @@ export default function Dashboard() {
           <div className="mb-4 soft-panel px-4 py-2 text-sm text-[var(--text)]">{syncMessage}</div>
         )}
 
-        <div className="mb-4 flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 w-fit">
-          <button
-            onClick={() => setTab("overview")}
-            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
-              tab === "overview"
-                ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
-                : "text-[var(--text-muted)] hover:text-[var(--text)]"
-            }`}
-          >
-            Visão geral
-          </button>
-          <button
-            onClick={() => setTab("detailed")}
-            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
-              tab === "detailed"
-                ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
-                : "text-[var(--text-muted)] hover:text-[var(--text)]"
-            }`}
-          >
-            Detalhado (campanha / conjunto / anúncio)
-          </button>
+        <div className="mb-4 flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 w-fit">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
+                tab === t.key
+                  ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
+                  : "text-[var(--text-muted)] hover:text-[var(--text)]"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {loading ? (
           <p className="py-10 text-center text-sm text-[var(--text-muted)]">Carregando...</p>
-        ) : tab === "overview" ? (
-          <div className="table-shell table-scroll">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-[var(--text-muted)]">
-                <tr className="border-b border-[var(--border)]">
-                  <th className="px-4 py-3">Data</th>
-                  <th className="px-4 py-3">BM</th>
-                  <th className="px-4 py-3">Conta</th>
-                  <th className="px-4 py-3 text-right">Gasto</th>
-                  <th className="px-4 py-3 text-right">Impressões</th>
-                  <th className="px-4 py-3 text-right">Cliques</th>
-                  <th className="px-4 py-3 text-right">CPC</th>
-                  <th className="px-4 py-3 text-right">CPM</th>
-                  <th className="px-4 py-3 text-right">CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overviewRows.map((row) => (
-                  <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
-                    <td className="px-4 py-2.5 text-[var(--text-muted)]">{row.date}</td>
-                    <td className="px-4 py-2.5">{row.ad_accounts?.business_managers?.name || "-"}</td>
-                    <td className="px-4 py-2.5">{row.ad_accounts?.name || row.ad_account_id}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-[var(--text)]">
-                      {formatCurrency(row.spend, row.currency)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.impressions)}</td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.clicks)}</td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                      {formatCurrency(row.cpc, row.currency)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                      {formatCurrency(row.cpm, row.currency)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                      {row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"}
-                    </td>
-                  </tr>
-                ))}
-                {overviewRows.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-[var(--text-muted)]">
-                      Nenhum dado no período. Clique em &quot;Sincronizar agora&quot;.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {overviewRows.length > 0 && (
-                <tfoot>
-                  <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
-                    <td className="px-4 py-3" colSpan={3}>
-                      Total
-                    </td>
-                    <td className="px-4 py-3 text-right text-[var(--accent-strong)]">
-                      {formatCurrency(overviewTotal, overviewRows[0]?.currency)}
-                    </td>
-                    <td colSpan={5} />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
+        ) : tab === "bm" ? (
+          <SpendTable rows={bmRows} mode="bm" />
+        ) : tab === "account" ? (
+          <SpendTable rows={accountRows} mode="account" />
         ) : (
-          <div className="table-shell table-scroll">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-[var(--text-muted)]">
-                <tr className="border-b border-[var(--border)]">
-                  <th className="px-4 py-3">Data</th>
-                  <th className="px-4 py-3">Conta</th>
-                  <th className="px-4 py-3">Campanha</th>
-                  <th className="px-4 py-3">Conjunto</th>
-                  <th className="px-4 py-3">Anúncio</th>
-                  <th className="px-4 py-3 text-right">Gasto</th>
-                  <th className="px-4 py-3 text-right">Impressões</th>
-                  <th className="px-4 py-3 text-right">Cliques</th>
-                  <th className="px-4 py-3 text-right">CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailedRows.map((row) => (
-                  <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
-                    <td className="px-4 py-2.5 text-[var(--text-muted)]">{row.date}</td>
-                    <td className="px-4 py-2.5">{row.ad_accounts?.name || row.ad_account_id}</td>
-                    <td className="px-4 py-2.5">{row.campaign_name || "-"}</td>
-                    <td className="px-4 py-2.5">{row.adset_name || "-"}</td>
-                    <td className="px-4 py-2.5">{row.ad_name || "-"}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-[var(--text)]">
-                      {formatCurrency(row.spend, row.currency)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.impressions)}</td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.clicks)}</td>
-                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                      {row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"}
-                    </td>
-                  </tr>
-                ))}
-                {detailedRows.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-[var(--text-muted)]">
-                      Nenhum dado no período. Clique em &quot;Sincronizar agora&quot;.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {detailedRows.length > 0 && (
-                <tfoot>
-                  <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
-                    <td className="px-4 py-3" colSpan={5}>
-                      Total
-                    </td>
-                    <td className="px-4 py-3 text-right text-[var(--accent-strong)]">
-                      {formatCurrency(detailedTotal, detailedRows[0]?.currency)}
-                    </td>
-                    <td colSpan={3} />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
+          <DetailedTable rows={detailedRows} />
         )}
       </main>
     </div>

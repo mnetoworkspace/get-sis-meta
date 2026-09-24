@@ -5,6 +5,7 @@ import {
   fetchAccountDailyInsights,
   fetchAdLevelDailyInsights,
 } from "@/lib/meta";
+import { pickResult } from "@/lib/results";
 import type { AdAccount, MetaCredential } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -95,19 +96,32 @@ export async function POST(request: Request) {
           ]);
 
           if (accountDaily.length > 0) {
-            const rows = accountDaily.map((row) => ({
-              ad_account_id: account.id,
-              date: row.date_start,
-              spend: num(row.spend),
-              impressions: num(row.impressions),
-              clicks: num(row.clicks),
-              reach: row.reach ? num(row.reach) : null,
-              cpc: row.cpc ? num(row.cpc) : null,
-              cpm: row.cpm ? num(row.cpm) : null,
-              ctr: row.ctr ? num(row.ctr) : null,
-              currency: account.currency,
-              synced_at: new Date().toISOString(),
-            }));
+            const rows = accountDaily.map((row) => {
+              const spend = num(row.spend);
+              const { results, resultType, costPerResult } = pickResult(
+                row.actions,
+                row.cost_per_action_type,
+                spend,
+              );
+              return {
+                ad_account_id: account.id,
+                date: row.date_start,
+                spend,
+                impressions: num(row.impressions),
+                clicks: num(row.clicks),
+                reach: row.reach ? num(row.reach) : null,
+                frequency: row.frequency ? num(row.frequency) : null,
+                inline_link_clicks: row.inline_link_clicks ? num(row.inline_link_clicks) : null,
+                cpc: row.cpc ? num(row.cpc) : null,
+                cpm: row.cpm ? num(row.cpm) : null,
+                ctr: row.ctr ? num(row.ctr) : null,
+                results,
+                result_type: resultType,
+                cost_per_result: costPerResult,
+                currency: account.currency,
+                synced_at: new Date().toISOString(),
+              };
+            });
 
             const { error: upsertError } = await supabase
               .from("insights_account_daily")
@@ -117,25 +131,38 @@ export async function POST(request: Request) {
           }
 
           if (adDaily.length > 0) {
-            const rows = adDaily.map((row) => ({
-              ad_account_id: account.id,
-              date: row.date_start,
-              campaign_id: row.campaign_id,
-              campaign_name: row.campaign_name ?? null,
-              adset_id: row.adset_id,
-              adset_name: row.adset_name ?? null,
-              ad_id: row.ad_id,
-              ad_name: row.ad_name ?? null,
-              spend: num(row.spend),
-              impressions: num(row.impressions),
-              clicks: num(row.clicks),
-              reach: row.reach ? num(row.reach) : null,
-              cpc: row.cpc ? num(row.cpc) : null,
-              cpm: row.cpm ? num(row.cpm) : null,
-              ctr: row.ctr ? num(row.ctr) : null,
-              currency: account.currency,
-              synced_at: new Date().toISOString(),
-            }));
+            const rows = adDaily.map((row) => {
+              const spend = num(row.spend);
+              const { results, resultType, costPerResult } = pickResult(
+                row.actions,
+                row.cost_per_action_type,
+                spend,
+              );
+              return {
+                ad_account_id: account.id,
+                date: row.date_start,
+                campaign_id: row.campaign_id,
+                campaign_name: row.campaign_name ?? null,
+                adset_id: row.adset_id,
+                adset_name: row.adset_name ?? null,
+                ad_id: row.ad_id,
+                ad_name: row.ad_name ?? null,
+                spend,
+                impressions: num(row.impressions),
+                clicks: num(row.clicks),
+                reach: row.reach ? num(row.reach) : null,
+                frequency: row.frequency ? num(row.frequency) : null,
+                inline_link_clicks: row.inline_link_clicks ? num(row.inline_link_clicks) : null,
+                cpc: row.cpc ? num(row.cpc) : null,
+                cpm: row.cpm ? num(row.cpm) : null,
+                ctr: row.ctr ? num(row.ctr) : null,
+                results,
+                result_type: resultType,
+                cost_per_result: costPerResult,
+                currency: account.currency,
+                synced_at: new Date().toISOString(),
+              };
+            });
 
             const { error: upsertError } = await supabase
               .from("insights_ad_daily")

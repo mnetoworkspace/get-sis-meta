@@ -110,6 +110,18 @@ export async function fetchClientAdAccounts(
   });
 }
 
+export interface MetaAction {
+  action_type: string;
+  value: string;
+}
+
+const ACCOUNT_INSIGHT_FIELDS =
+  "spend,impressions,clicks,reach,frequency,inline_link_clicks,cpc,cpm,ctr,actions,cost_per_action_type";
+
+const AD_INSIGHT_FIELDS =
+  "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name," +
+  "spend,impressions,clicks,reach,frequency,inline_link_clicks,cpc,cpm,ctr,actions,cost_per_action_type";
+
 export interface AccountDailyInsight {
   account_id: string;
   date_start: string;
@@ -118,9 +130,13 @@ export interface AccountDailyInsight {
   impressions?: string;
   clicks?: string;
   reach?: string;
+  frequency?: string;
+  inline_link_clicks?: string;
   cpc?: string;
   cpm?: string;
   ctr?: string;
+  actions?: MetaAction[];
+  cost_per_action_type?: MetaAction[];
 }
 
 export async function fetchAccountDailyInsights(
@@ -133,7 +149,7 @@ export async function fetchAccountDailyInsights(
     level: "account",
     time_increment: "1",
     time_range: JSON.stringify({ since, until }),
-    fields: "spend,impressions,clicks,reach,cpc,cpm,ctr",
+    fields: ACCOUNT_INSIGHT_FIELDS,
     access_token: token,
     limit: "500",
   });
@@ -152,9 +168,13 @@ export interface AdDailyInsight {
   impressions?: string;
   clicks?: string;
   reach?: string;
+  frequency?: string;
+  inline_link_clicks?: string;
   cpc?: string;
   cpm?: string;
   ctr?: string;
+  actions?: MetaAction[];
+  cost_per_action_type?: MetaAction[];
 }
 
 export async function fetchAdLevelDailyInsights(
@@ -167,8 +187,7 @@ export async function fetchAdLevelDailyInsights(
     level: "ad",
     time_increment: "1",
     time_range: JSON.stringify({ since, until }),
-    fields:
-      "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,reach,cpc,cpm,ctr",
+    fields: AD_INSIGHT_FIELDS,
     access_token: token,
     limit: "500",
   });
