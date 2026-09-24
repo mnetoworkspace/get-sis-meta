@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# sis-get-gastos
 
-## Getting Started
+Painel de gastos do Meta Ads (Marketing API) consolidado por Business Manager
+e conta de anúncio, com dados persistidos no Supabase. Sincronização
+disparada manualmente pelo botão "Sincronizar agora" no dashboard.
 
-First, run the development server:
+## Como funciona
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Backend + frontend**: um único app Next.js (App Router). As rotas em
+  `src/app/api/*` rodam server-side e usam a **service role key** do
+  Supabase — nunca exposta ao browser.
+- **Banco**: Supabase (Postgres). Schema em `supabase/migrations/0001_init.sql`.
+- **Meta Marketing API**: cliente em `src/lib/meta.ts`, usa os tokens de
+  System User já gerados (sem fluxo OAuth).
+- **Dados coletados**:
+  - `insights_account_daily`: gasto agregado por conta/dia (aba "Visão geral").
+  - `insights_ad_daily`: gasto por campanha/conjunto/anúncio/dia (aba
+    "Detalhado").
+
+## Setup
+
+### 1. Criar o projeto no Supabase
+
+1. Crie um projeto em https://supabase.com.
+2. No SQL Editor, rode o conteúdo de `supabase/migrations/0001_init.sql`
+   (ou use `supabase db push` com o CLI, se preferir).
+3. Copie a **Project URL** e a **service_role key** (Settings → API).
+
+### 2. Variáveis de ambiente
+
+Copie `.env.example` para `.env.local` e preencha:
+
+```
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+META_GRAPH_API_VERSION=v21.0
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Não é necessário colocar tokens da Meta em variável de ambiente — eles são
+cadastrados pela tela `/admin` e ficam salvos na tabela `meta_credentials`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Rodar localmente
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Abra http://localhost:3000/admin e cadastre:
 
-To learn more about Next.js, take a look at the following resources:
+1. **Business Manager**: ID do BM, nome, e o token do System User (o mesmo
+   token que já foi gerado e associado às contas de anúncio).
+2. **Contas de anúncio**: clique em "Importar contas da Meta" para buscar
+   automaticamente via API (usa `owned_ad_accounts` / `client_ad_accounts`
+   do BM), ou adicione manualmente pelo ID (`act_...`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Depois volte para `/` e clique em **Sincronizar agora** — isso busca os
+insights (spend, impressões, cliques, CPC, CPM, CTR) da Meta Marketing API
+no intervalo de datas selecionado e grava no Supabase.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy no EasyPanel
 
-## Deploy on Vercel
+O projeto já tem `Dockerfile` (multi-stage, usa `output: "standalone"` do
+Next.js) e `.dockerignore` prontos.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. No EasyPanel, crie um novo serviço do tipo **App** apontando para este
+   repositório (Dockerfile detectado automaticamente).
+2. Configure as variáveis de ambiente do serviço:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `META_GRAPH_API_VERSION` (opcional, default `v21.0`)
+3. Porta interna: `3000`.
+4. Deploy. O app sobe com `node server.js` (build standalone do Next.js).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Segurança
+
+- As tabelas do Supabase têm RLS habilitado sem policies para
+  `anon`/`authenticated` — só a service role (usada pelo backend) acessa os
+  dados. Nunca use a `anon key` neste projeto.
+- Os tokens de System User ficam salvos em texto simples na tabela
+  `meta_credentials`. Restrinja o acesso ao painel `/admin` (ex.: colocar
+  atrás de autenticação/VPN no EasyPanel) antes de usar em produção com
+  dados sensíveis.
