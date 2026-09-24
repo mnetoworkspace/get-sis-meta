@@ -19,6 +19,7 @@ interface AdAccountRow {
   name: string;
   currency: string | null;
   status: string | null;
+  funding_source: string | null;
   business_managers?: { name: string } | null;
 }
 
@@ -272,7 +273,8 @@ export default function AdminPanel() {
               <li key={acc.id} className="flex justify-between text-sm">
                 <span className="text-[var(--text)]">{acc.name}</span>
                 <span className="text-[var(--text-muted)]">
-                  {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"}
+                  {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"} ·{" "}
+                  {acc.funding_source || "sem cartão"}
                 </span>
               </li>
             ))}

@@ -110,6 +110,18 @@ export async function fetchClientAdAccounts(
   });
 }
 
+/**
+ * Cartão/fonte de pagamento vinculada à conta na Meta (ex: "Mastercard *7617").
+ * Retorna null se a conta não tiver um funding source configurado.
+ */
+export async function fetchFundingSource(adAccountId: string, token: string): Promise<string | null> {
+  const json = await graphGet<{ funding_source_details?: { display_string?: string } }>(`/${adAccountId}`, {
+    fields: "funding_source_details",
+    access_token: token,
+  });
+  return json.funding_source_details?.display_string ?? null;
+}
+
 export interface MetaAction {
   action_type: string;
   value: string;

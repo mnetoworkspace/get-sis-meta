@@ -102,6 +102,11 @@ export function DepositsTab({ since, until }: Props) {
         </div>
       )}
 
+      {/* A API de pagamentos hoje só emite depósitos FTD nesse endpoint — o
+          redepósito ainda não está incluído (o time deles vai adicionar no
+          mesmo endpoint depois). Por isso o total aqui é rotulado como FTD,
+          não "total geral". Quando o redepósito chegar, revisar esses rótulos
+          e voltar a somar os dois pra um "Total depositado" de verdade. */}
       {summary.map((s) => (
         <div key={s.currency} className="mb-6">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -111,7 +116,7 @@ export function DepositsTab({ since, until }: Props) {
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="stat-card">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                Total depositado
+                Total depositado FTD
               </p>
               <p className="mt-1.5 text-xl font-semibold text-[var(--text)]">{formatCurrency(s.amount, s.currency)}</p>
               {toBrl(s.amount, s.currency) && (

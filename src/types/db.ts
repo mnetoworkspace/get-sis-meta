@@ -12,6 +12,7 @@ export interface AdAccount {
   currency: string | null;
   status: string | null;
   is_active: boolean;
+  funding_source: string | null; // ex: "Mastercard *7617"
   created_at: string;
 }
 

@@ -4,6 +4,7 @@ import {
   fetchAccountDailyInsights,
   fetchAccountHourlyInsights,
   fetchAdLevelDailyInsights,
+  fetchFundingSource,
 } from "@/lib/meta";
 import { pickFtd, pickResult } from "@/lib/results";
 import { fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
 
       for (const account of adAccounts || []) {
         try {
-          const [accountDaily, adDaily, accountHourly] = await Promise.all([
+          const [accountDaily, adDaily, accountHourly, fundingSource] = await Promise.all([
             fetchAccountDailyInsights(
               account.id,
               credential.system_user_token,
@@ -124,7 +125,18 @@ export async function POST(request: Request) {
               since,
               until,
             ),
+            // undefined = a chamada falhou (ex: sem permissão) — não sobrescreve
+            // o que já está salvo. null = a Meta confirmou que não há cartão.
+            fetchFundingSource(account.id, credential.system_user_token).catch(() => undefined),
           ]);
+
+          if (fundingSource !== undefined) {
+            const { error: fundingError } = await supabase
+              .from("ad_accounts")
+              .update({ funding_source: fundingSource })
+              .eq("id", account.id);
+            if (fundingError) throw fundingError;
+          }
 
           if (accountDaily.length > 0) {
             const rows = accountDaily.map((row) => {
