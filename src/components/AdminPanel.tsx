@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Download } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LogoutButton } from "@/components/LogoutButton";
 
 interface BmRow {
   id: string;
@@ -129,10 +130,13 @@ export default function AdminPanel() {
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
             <h1 className="text-lg font-semibold text-[var(--text)]">Gerenciar BMs e contas</h1>
           </div>
-          <Link href="/" className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
-            <ArrowLeft size={14} />
-            Voltar ao dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+              <ArrowLeft size={14} />
+              Voltar ao dashboard
+            </Link>
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

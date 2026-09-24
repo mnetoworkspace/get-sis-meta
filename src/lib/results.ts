@@ -14,7 +14,7 @@ const RESULT_PRIORITY: { types: string[]; label: string }[] = [
       "onsite_conversion.purchase",
       "offsite_conversion.fb_pixel_purchase",
     ],
-    label: "Compra",
+    label: "FTD",
   },
   {
     types: [

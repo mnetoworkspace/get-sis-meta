@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import { applySort, nextSortState, NO_SORT, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/ui/sortable-th";
+import { ColumnManagerButton } from "@/components/ui/column-manager";
+import { useColumnConfig, type ColumnDef } from "@/lib/column-config";
 
 export interface SpendRow {
   id: string;
@@ -34,8 +36,43 @@ interface Props {
   mode: "bm" | "account";
 }
 
+type ColKey =
+  | "bm"
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "cpc"
+  | "cpm"
+  | "ctr"
+  | "frequency"
+  | "inline_link_clicks"
+  | "results"
+  | "cost_per_result";
+
+const ALL_COLUMNS: ColumnDef<ColKey>[] = [
+  { key: "bm", label: "BM", defaultOn: true },
+  { key: "spend", label: "Gasto", defaultOn: true },
+  { key: "impressions", label: "Impressões", defaultOn: true },
+  { key: "clicks", label: "Cliques", defaultOn: true },
+  { key: "cpc", label: "CPC", defaultOn: true },
+  { key: "cpm", label: "CPM", defaultOn: true },
+  { key: "ctr", label: "CTR", defaultOn: true },
+  { key: "frequency", label: "Freq.", defaultOn: true },
+  { key: "inline_link_clicks", label: "Cliques no link", defaultOn: true },
+  { key: "results", label: "Resultados", defaultOn: true },
+  { key: "cost_per_result", label: "Custo/Resultado", defaultOn: true },
+];
+
+const BM_COLUMNS = ALL_COLUMNS.filter((c) => !["bm", "frequency", "inline_link_clicks"].includes(c.key));
+const ACCOUNT_COLUMNS = ALL_COLUMNS;
+
+const ALIGN_LEFT: ColKey[] = ["bm"];
+
 export function SpendTable({ rows, mode }: Props) {
   const [sort, setSort] = useState<SortState>(NO_SORT);
+  const columns = mode === "bm" ? BM_COLUMNS : ACCOUNT_COLUMNS;
+  const { visibleCols, colOrder, orderedVisible, toggle, resetToDefault, dragStart, dragOver, dragEnd } =
+    useColumnConfig<ColKey>(`spend-table-${mode}-v1`, columns);
 
   const getters: Record<string, (r: SpendRow) => string | number | null> = {
     date: (r) => r.date,
@@ -75,90 +112,114 @@ export function SpendTable({ rows, mode }: Props) {
     setSort((s) => nextSortState(s, key));
   }
 
-  const colSpan = mode === "bm" ? 8 : 11;
+  const cellRenderers: Record<ColKey, (row: SpendRow) => ReactNode> = {
+    bm: (row) => row.ad_accounts?.business_managers?.name || "-",
+    spend: (row) => (
+      <span className="font-semibold text-[var(--text)]">{formatCurrency(row.spend, row.currency)}</span>
+    ),
+    impressions: (row) => formatNumber(row.impressions),
+    clicks: (row) => formatNumber(row.clicks),
+    cpc: (row) => formatCurrency(row.cpc, row.currency),
+    cpm: (row) => formatCurrency(row.cpm, row.currency),
+    ctr: (row) => (row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"),
+    frequency: (row) => (row.frequency ? Number(row.frequency).toFixed(2) : "-"),
+    inline_link_clicks: (row) => (row.inline_link_clicks != null ? formatNumber(row.inline_link_clicks) : "-"),
+    results: (row) => (
+      <>
+        {row.results != null ? formatNumber(row.results) : "-"}
+        {row.result_type ? <span className="ml-1 text-[10px] text-[var(--text-muted)]">({row.result_type})</span> : null}
+      </>
+    ),
+    cost_per_result: (row) => (row.cost_per_result != null ? formatCurrency(row.cost_per_result, row.currency) : "-"),
+  };
+
+  const colCount = 2 + orderedVisible.length;
 
   return (
     <div className="table-shell table-scroll">
+      <div className="flex items-center justify-end border-b border-[var(--border)] px-3 py-2">
+        <ColumnManagerButton
+          panelId={`spend-col-panel-${mode}`}
+          columns={columns}
+          colOrder={colOrder}
+          visibleCols={visibleCols}
+          onToggle={toggle}
+          onDragStart={dragStart}
+          onDragOver={dragOver}
+          onDragEnd={dragEnd}
+          onReset={resetToDefault}
+        />
+      </div>
       <table className="w-full text-sm">
         <thead className="text-xs uppercase text-[var(--text-muted)]">
           <tr className="border-b border-[var(--border)]">
             <SortableTh label="Data" sortKey="date" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
-            {mode === "account" && (
-              <SortableTh label="BM" sortKey="bm" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
-            )}
             <SortableTh label={mode === "bm" ? "BM" : "Conta"} sortKey="label" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
-            <SortableTh label="Gasto" sortKey="spend" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="Impressões" sortKey="impressions" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="Cliques" sortKey="clicks" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="CPC" sortKey="cpc" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="CPM" sortKey="cpm" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="CTR" sortKey="ctr" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            {mode === "account" && (
-              <>
-                <SortableTh label="Freq." sortKey="frequency" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-                <SortableTh label="Cliques no link" sortKey="inline_link_clicks" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-              </>
-            )}
-            <SortableTh label="Resultados" sortKey="results" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
-            <SortableTh label="Custo/Resultado" sortKey="cost_per_result" activeKey={sort.key} dir={sort.dir} align="right" onSort={onSort} />
+            {orderedVisible.map((key) => {
+              const col = columns.find((c) => c.key === key)!;
+              return (
+                <SortableTh
+                  key={key}
+                  label={col.label}
+                  sortKey={key}
+                  activeKey={sort.key}
+                  dir={sort.dir}
+                  align={ALIGN_LEFT.includes(key) ? "left" : "right"}
+                  onSort={onSort}
+                />
+              );
+            })}
           </tr>
         </thead>
         <tbody>
           {sortedRows.map((row) => (
             <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
               <td className="px-4 py-2.5 text-[var(--text-muted)]">{row.date}</td>
-              {mode === "account" && (
-                <td className="px-4 py-2.5">{row.ad_accounts?.business_managers?.name || "-"}</td>
-              )}
               <td className="px-4 py-2.5">{row.ad_accounts?.name || "-"}</td>
-              <td className="px-4 py-2.5 text-right font-semibold text-[var(--text)]">
-                {formatCurrency(row.spend, row.currency)}
-              </td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.impressions)}</td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.clicks)}</td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatCurrency(row.cpc, row.currency)}</td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatCurrency(row.cpm, row.currency)}</td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                {row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"}
-              </td>
-              {mode === "account" && (
-                <>
-                  <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                    {row.frequency ? Number(row.frequency).toFixed(2) : "-"}
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                    {row.inline_link_clicks != null ? formatNumber(row.inline_link_clicks) : "-"}
-                  </td>
-                </>
-              )}
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                {row.results != null ? formatNumber(row.results) : "-"}
-                {row.result_type ? <span className="ml-1 text-[10px] text-[var(--text-muted)]">({row.result_type})</span> : null}
-              </td>
-              <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
-                {row.cost_per_result != null ? formatCurrency(row.cost_per_result, row.currency) : "-"}
-              </td>
+              {orderedVisible.map((key) => (
+                <td
+                  key={key}
+                  className={`px-4 py-2.5 text-[var(--text-muted)] ${ALIGN_LEFT.includes(key) ? "text-left" : "text-right"}`}
+                >
+                  {cellRenderers[key](row)}
+                </td>
+              ))}
             </tr>
           ))}
           {sortedRows.length === 0 && (
             <tr>
-              <td colSpan={colSpan} className="px-4 py-10 text-center text-[var(--text-muted)]">
+              <td colSpan={colCount} className="px-4 py-10 text-center text-[var(--text-muted)]">
                 Nenhum dado no período. Clique em &quot;Sincronizar agora&quot;.
               </td>
             </tr>
           )}
         </tbody>
-        {sortedRows.length > 0 && (
-          <tfoot>
-            <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
-              <td className="px-4 py-3" colSpan={mode === "account" ? 3 : 2}>
-                Total
-              </td>
-              <td className="px-4 py-3 text-right text-[var(--accent-strong)]">{formatCurrency(total, currency)}</td>
-              <td colSpan={colSpan - (mode === "account" ? 4 : 3)} />
-            </tr>
-          </tfoot>
-        )}
+        {sortedRows.length > 0 && (() => {
+          const spendIdx = orderedVisible.indexOf("spend");
+          if (spendIdx === -1) {
+            return (
+              <tfoot>
+                <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
+                  <td className="px-4 py-3" colSpan={2}>
+                    Total: {formatCurrency(total, currency)}
+                  </td>
+                  <td colSpan={orderedVisible.length} />
+                </tr>
+              </tfoot>
+            );
+          }
+          return (
+            <tfoot>
+              <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
+                <td className="px-4 py-3" colSpan={2 + spendIdx}>
+                  Total
+                </td>
+                <td className="px-4 py-3 text-right text-[var(--accent-strong)]">{formatCurrency(total, currency)}</td>
+                <td colSpan={Math.max(orderedVisible.length - spendIdx - 1, 0)} />
+              </tr>
+            </tfoot>
+          );
+        })()}
       </table>
     </div>
   );

@@ -8,6 +8,7 @@ import { daysAgoISO, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
 import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
 import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTable";
+import { LogoutButton } from "@/components/LogoutButton";
 
 type Tab = "bm" | "account" | "detailed";
 
@@ -145,10 +146,13 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-          <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
-            <Settings size={14} />
-            Gerenciar BMs e contas
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
+              <Settings size={14} />
+              Gerenciar BMs e contas
+            </Link>
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
@@ -209,15 +213,19 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {loading ? (
-          <p className="py-10 text-center text-sm text-[var(--text-muted)]">Carregando...</p>
-        ) : tab === "bm" ? (
-          <SpendTable rows={bmRows} mode="bm" />
-        ) : tab === "account" ? (
-          <SpendTable rows={accountRows} mode="account" />
-        ) : (
-          <DetailedTable rows={detailedRows} />
-        )}
+        {/* Mantém a tabela montada durante o loading (só reduz opacidade) —
+            desmontar aqui reseta a config de colunas (ordem/visibilidade)
+            porque o efeito que carrega do localStorage não chega a assentar
+            antes do remount seguinte. */}
+        <div className={loading ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
+          {tab === "bm" ? (
+            <SpendTable key="bm" rows={bmRows} mode="bm" />
+          ) : tab === "account" ? (
+            <SpendTable key="account" rows={accountRows} mode="account" />
+          ) : (
+            <DetailedTable rows={detailedRows} />
+          )}
+        </div>
       </main>
     </div>
   );
