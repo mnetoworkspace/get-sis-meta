@@ -3,10 +3,18 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 import {
   MetaApiError,
   fetchAccountDailyInsights,
+  fetchAccountHourlyInsights,
   fetchAdLevelDailyInsights,
 } from "@/lib/meta";
 import { pickFtd, pickResult } from "@/lib/results";
+import { FathomApiError, fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
 import type { AdAccount, MetaCredential } from "@/types/db";
+
+// "00:00:00 - 00:59:59" -> 0
+function parseHourBucket(label: string): number {
+  const match = label.match(/^(\d{1,2}):/);
+  return match ? Number(match[1]) : 0;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -80,7 +88,7 @@ export async function POST(request: Request) {
 
       for (const account of adAccounts || []) {
         try {
-          const [accountDaily, adDaily] = await Promise.all([
+          const [accountDaily, adDaily, accountHourly] = await Promise.all([
             fetchAccountDailyInsights(
               account.id,
               credential.system_user_token,
@@ -88,6 +96,12 @@ export async function POST(request: Request) {
               until,
             ),
             fetchAdLevelDailyInsights(
+              account.id,
+              credential.system_user_token,
+              since,
+              until,
+            ),
+            fetchAccountHourlyInsights(
               account.id,
               credential.system_user_token,
               since,
@@ -177,6 +191,31 @@ export async function POST(request: Request) {
             if (upsertError) throw upsertError;
           }
 
+          if (accountHourly.length > 0) {
+            const rows = accountHourly.map((row) => {
+              const spend = num(row.spend);
+              const { results, costPerResult } = pickResult(row.actions, row.cost_per_action_type, spend);
+              return {
+                ad_account_id: account.id,
+                date: row.date_start,
+                hour: parseHourBucket(row.hourly_stats_aggregated_by_advertiser_time_zone),
+                spend,
+                impressions: num(row.impressions),
+                clicks: num(row.clicks),
+                results,
+                cost_per_result: costPerResult,
+                currency: account.currency,
+                synced_at: new Date().toISOString(),
+              };
+            });
+
+            const { error: upsertError } = await supabase
+              .from("insights_account_hourly")
+              .upsert(rows, { onConflict: "ad_account_id,date,hour" });
+
+            if (upsertError) throw upsertError;
+          }
+
           accountsSynced += 1;
         } catch (err) {
           accountsFailed += 1;
@@ -188,6 +227,42 @@ export async function POST(request: Request) {
                 : "Erro desconhecido";
           errors.push({ ad_account_id: account.id, message });
         }
+      }
+    }
+
+    if (process.env.FATHOM_API_TOKEN && process.env.FATHOM_SITE_ID) {
+      try {
+        const siteId = getFathomSiteId();
+        const hourlyTraffic = await fetchHourlyTraffic(siteId, since, until);
+
+        if (hourlyTraffic.length > 0) {
+          const rows = hourlyTraffic.map((row) => {
+            const [date, time] = row.date.split(" ");
+            return {
+              site_id: siteId,
+              date,
+              hour: Number(time.slice(0, 2)),
+              visits: num(row.visits),
+              pageviews: num(row.pageviews),
+              avg_duration: row.avg_duration ? num(row.avg_duration) : null,
+              synced_at: new Date().toISOString(),
+            };
+          });
+
+          const { error: upsertError } = await supabase
+            .from("traffic_hourly")
+            .upsert(rows, { onConflict: "site_id,date,hour" });
+
+          if (upsertError) throw upsertError;
+        }
+      } catch (err) {
+        const message =
+          err instanceof FathomApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Erro desconhecido";
+        errors.push({ ad_account_id: "fathom", message });
       }
     }
 

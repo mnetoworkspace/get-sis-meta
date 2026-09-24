@@ -10,8 +10,9 @@ import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
 import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTable";
 import { LogoutButton } from "@/components/LogoutButton";
 import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
+import { TrafficTab } from "@/components/tables/TrafficTab";
 
-type Tab = "bm" | "account" | "detailed";
+type Tab = "bm" | "account" | "detailed" | "traffic";
 
 interface AdAccountOption {
   id: string;
@@ -39,6 +40,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "bm", label: "Por BM" },
   { key: "account", label: "Por Conta" },
   { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)" },
+  { key: "traffic", label: "Tráfego" },
 ];
 
 function aggregateTotals(rows: SpendRow[]): PeriodTotals {
@@ -107,6 +109,7 @@ export default function Dashboard() {
   }, []);
 
   const loadData = useCallback(async () => {
+    if (tab === "traffic") return;
     setLoading(true);
     try {
       if (tab === "detailed") {
@@ -233,7 +236,7 @@ export default function Dashboard() {
                 </option>
               ))}
             </select>
-          ) : (
+          ) : tab !== "traffic" ? (
             <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="input">
               <option value="">Todas as contas</option>
               {accounts.map((acc) => (
@@ -242,7 +245,7 @@ export default function Dashboard() {
                 </option>
               ))}
             </select>
-          )}
+          ) : null}
 
           <div className="ml-auto flex flex-col items-end gap-1">
             <button onClick={handleSync} disabled={syncing} className="btn-primary flex items-center gap-2">
@@ -290,15 +293,19 @@ export default function Dashboard() {
             desmontar aqui reseta a config de colunas (ordem/visibilidade)
             porque o efeito que carrega do localStorage não chega a assentar
             antes do remount seguinte. */}
-        <div className={loading ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
-          {tab === "bm" ? (
-            <SpendTable key="bm" rows={bmRows} mode="bm" />
-          ) : tab === "account" ? (
-            <SpendTable key="account" rows={accountRows} mode="account" />
-          ) : (
-            <DetailedTable rows={detailedRows} />
-          )}
-        </div>
+        {tab === "traffic" ? (
+          <TrafficTab since={since} until={until} />
+        ) : (
+          <div className={loading ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
+            {tab === "bm" ? (
+              <SpendTable key="bm" rows={bmRows} mode="bm" />
+            ) : tab === "account" ? (
+              <SpendTable key="account" rows={accountRows} mode="account" />
+            ) : (
+              <DetailedTable rows={detailedRows} />
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

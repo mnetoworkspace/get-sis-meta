@@ -155,6 +155,34 @@ export async function fetchAccountDailyInsights(
   });
 }
 
+export interface AccountHourlyInsight {
+  date_start: string;
+  date_stop: string;
+  hourly_stats_aggregated_by_advertiser_time_zone: string; // ex: "00:00:00 - 00:59:59"
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  actions?: MetaAction[];
+  cost_per_action_type?: MetaAction[];
+}
+
+export async function fetchAccountHourlyInsights(
+  adAccountId: string,
+  token: string,
+  since: string,
+  until: string,
+): Promise<AccountHourlyInsight[]> {
+  return graphGetAllPages<AccountHourlyInsight>(`/${adAccountId}/insights`, {
+    level: "account",
+    time_increment: "1",
+    breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+    time_range: JSON.stringify({ since, until }),
+    fields: "spend,impressions,clicks,actions,cost_per_action_type",
+    access_token: token,
+    limit: "500",
+  });
+}
+
 export interface AdDailyInsight {
   date_start: string;
   date_stop: string;
