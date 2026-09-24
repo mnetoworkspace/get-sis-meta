@@ -13,6 +13,7 @@ import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
 import { TrafficTab } from "@/components/tables/TrafficTab";
 import { DepositsTab } from "@/components/tables/DepositsTab";
 import { AccountMultiSelect } from "@/components/ui/account-multi-select";
+import { PushNotificationToggle } from "@/components/push/push-notification-toggle";
 
 type Tab = "bm" | "account" | "detailed" | "traffic" | "deposits";
 
@@ -227,6 +228,7 @@ export default function Dashboard() {
               <Settings size={14} />
               Gerenciar BMs e contas
             </Link>
+            <PushNotificationToggle />
             <LogoutButton />
           </div>
         </div>

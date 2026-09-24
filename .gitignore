@@ -40,6 +40,9 @@ yarn-error.log*
 # estado local do Claude Code (agendamentos, etc.) — não é do projeto
 /.claude/
 
+# cache local do Supabase CLI
+/supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
