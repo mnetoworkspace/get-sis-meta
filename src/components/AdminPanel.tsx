@@ -1,12 +1,14 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { ArrowLeft, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface BmRow {
   id: string;
   name: string;
-  meta_credentials: { id: string; label: string | null; app_id: string | null }[];
+  meta_credentials: { id: string; label: string | null; app_id: string | null } | null;
   ad_accounts: { id: string }[];
 }
 
@@ -120,119 +122,117 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold">Gerenciar BMs e contas</h1>
-          <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-900">
-            ← Voltar ao dashboard
+    <div className="min-h-screen">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
+        <div className="page-shell max-w-3xl flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Image src="/logo-rakebet.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
+            <h1 className="text-lg font-semibold text-[var(--text)]">Gerenciar BMs e contas</h1>
+          </div>
+          <Link href="/" className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+            <ArrowLeft size={14} />
+            Voltar ao dashboard
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-6 space-y-8">
-        {message && (
-          <div className="rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm">
-            {message}
-          </div>
-        )}
+      <main className="page-shell max-w-3xl px-6 py-6 space-y-6">
+        {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
-        <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold">1. Adicionar Business Manager + token</h2>
+        <section className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">1. Adicionar Business Manager + token</h2>
           <form onSubmit={submitBm} className="grid grid-cols-2 gap-3">
             <input
               placeholder="BM ID"
               value={bmForm.id}
               onChange={(e) => setBmForm({ ...bmForm, id: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
               required
             />
             <input
               placeholder="Nome do BM"
               value={bmForm.name}
               onChange={(e) => setBmForm({ ...bmForm, name: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
               required
             />
             <input
               placeholder="System User Token"
               value={bmForm.system_user_token}
               onChange={(e) => setBmForm({ ...bmForm, system_user_token: e.target.value })}
-              className="col-span-2 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input col-span-2"
               required
             />
             <input
               placeholder="App ID (opcional)"
               value={bmForm.app_id}
               onChange={(e) => setBmForm({ ...bmForm, app_id: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
             />
             <input
               placeholder="App Secret (opcional)"
               value={bmForm.app_secret}
               onChange={(e) => setBmForm({ ...bmForm, app_secret: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
               type="password"
             />
             <input
               placeholder="Label (opcional)"
               value={bmForm.label}
               onChange={(e) => setBmForm({ ...bmForm, label: e.target.value })}
-              className="col-span-2 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input col-span-2"
             />
-            <button
-              disabled={busy}
-              className="col-span-2 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-            >
+            <button disabled={busy} className="btn-primary col-span-2">
               Salvar BM
             </button>
           </form>
         </section>
 
-        <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold">BMs cadastrados</h2>
+        <section className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">BMs cadastrados</h2>
           <ul className="space-y-2">
             {bms.map((bm) => (
               <li
                 key={bm.id}
-                className="flex items-center justify-between rounded-md border border-neutral-100 px-3 py-2 text-sm"
+                className="flex items-center justify-between soft-panel px-3 py-2.5 text-sm"
               >
                 <div>
-                  <p className="font-medium">{bm.name}</p>
-                  <p className="text-xs text-neutral-500">
-                    {bm.id} · {bm.meta_credentials.length > 0 ? "token configurado" : "sem token"} ·{" "}
+                  <p className="font-medium text-[var(--text)]">{bm.name}</p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {bm.id} · {bm.meta_credentials ? "token configurado" : "sem token"} ·{" "}
                     {bm.ad_accounts.length} conta(s)
                   </p>
                 </div>
                 <button
                   onClick={() => importAccounts(bm.id)}
                   disabled={busy}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs hover:bg-neutral-100 disabled:opacity-50"
+                  className="btn-secondary flex items-center gap-1.5 py-1.5 px-3 text-xs"
                 >
+                  <Download size={12} />
                   Importar contas da Meta
                 </button>
               </li>
             ))}
             {bms.length === 0 && (
-              <p className="text-sm text-neutral-400">Nenhum BM cadastrado ainda.</p>
+              <p className="text-sm text-[var(--text-muted)]">Nenhum BM cadastrado ainda.</p>
             )}
           </ul>
         </section>
 
-        <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold">2. Adicionar conta de anúncio manualmente</h2>
+        <section className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">2. Adicionar conta de anúncio manualmente</h2>
           <form onSubmit={submitAccount} className="grid grid-cols-2 gap-3">
             <input
               placeholder="Ad Account ID (act_123... ou só o número)"
               value={accountForm.id}
               onChange={(e) => setAccountForm({ ...accountForm, id: e.target.value })}
-              className="col-span-2 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input col-span-2"
               required
             />
             <select
               value={accountForm.bm_id}
               onChange={(e) => setAccountForm({ ...accountForm, bm_id: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
               required
             >
               <option value="">Selecione o BM</option>
@@ -246,37 +246,34 @@ export default function AdminPanel() {
               placeholder="Nome da conta"
               value={accountForm.name}
               onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input"
               required
             />
             <input
               placeholder="Moeda (ex: BRL, USD)"
               value={accountForm.currency}
               onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })}
-              className="col-span-2 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="input col-span-2"
             />
-            <button
-              disabled={busy}
-              className="col-span-2 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-            >
+            <button disabled={busy} className="btn-primary col-span-2">
               Salvar conta
             </button>
           </form>
         </section>
 
-        <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold">Contas de anúncio cadastradas</h2>
-          <ul className="space-y-1">
+        <section className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">Contas de anúncio cadastradas</h2>
+          <ul className="space-y-1.5">
             {adAccounts.map((acc) => (
               <li key={acc.id} className="flex justify-between text-sm">
-                <span>{acc.name}</span>
-                <span className="text-neutral-400">
+                <span className="text-[var(--text)]">{acc.name}</span>
+                <span className="text-[var(--text-muted)]">
                   {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"}
                 </span>
               </li>
             ))}
             {adAccounts.length === 0 && (
-              <p className="text-sm text-neutral-400">Nenhuma conta cadastrada ainda.</p>
+              <p className="text-sm text-[var(--text-muted)]">Nenhuma conta cadastrada ainda.</p>
             )}
           </ul>
         </section>

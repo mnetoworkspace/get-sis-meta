@@ -1,8 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCurrency, formatNumber, daysAgoISO, todayISO } from "@/lib/format";
+import { QuickDateRange } from "@/components/ui/quick-date-range";
 
 type Tab = "overview" | "detailed";
 
@@ -151,100 +154,80 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-lg font-semibold">Gastos Meta Ads</h1>
-            <p className="text-sm text-neutral-500">
-              Gastos consolidados por BM / conta de anúncio
-            </p>
+    <div className="min-h-screen">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
+        <div className="page-shell flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Image src="/logo-rakebet.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
+            <div>
+              <h1 className="text-lg font-semibold text-[var(--text)]">Gastos Meta Ads</h1>
+              <p className="text-xs text-[var(--text-muted)]">
+                Gastos consolidados por BM / conta de anúncio
+              </p>
+            </div>
           </div>
-          <Link
-            href="/admin"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-          >
+          <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
+            <Settings size={14} />
             Gerenciar BMs e contas
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-6">
-        <div className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">De</label>
-            <input
-              type="date"
-              value={since}
-              onChange={(e) => setSince(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Até</label>
-            <input
-              type="date"
-              value={until}
-              onChange={(e) => setUntil(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Conta</label>
-            <select
-              value={accountFilter}
-              onChange={(e) => setAccountFilter(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-            >
-              <option value="">Todas as contas</option>
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.business_managers?.name || acc.id})
-                </option>
-              ))}
-            </select>
-          </div>
+      <main className="page-shell px-6 py-6">
+        <div className="mb-6 flex flex-wrap items-center gap-3 card p-4">
+          <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
+
+          <select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            className="input"
+          >
+            <option value="">Todas as contas</option>
+            {accounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name} ({acc.business_managers?.name || acc.id})
+              </option>
+            ))}
+          </select>
 
           <div className="ml-auto flex flex-col items-end gap-1">
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="btn-primary flex items-center gap-2"
             >
+              <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
               {syncing ? "Sincronizando..." : "Sincronizar agora"}
             </button>
             {lastSync && (
-              <span className="text-xs text-neutral-400">
-                Última sync: {new Date(lastSync.started_at).toLocaleString("pt-BR")} (
-                {lastSync.status})
+              <span className="text-xs text-[var(--text-muted)]">
+                Última sync: {new Date(lastSync.started_at).toLocaleString("pt-BR")} ({lastSync.status})
               </span>
             )}
           </div>
         </div>
 
         {syncMessage && (
-          <div className="mb-4 rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm">
-            {syncMessage}
-          </div>
+          <div className="mb-4 soft-panel px-4 py-2 text-sm text-[var(--text)]">{syncMessage}</div>
         )}
 
-        <div className="mb-4 flex gap-2 border-b border-neutral-200">
+        <div className="mb-4 flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 w-fit">
           <button
             onClick={() => setTab("overview")}
-            className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
               tab === "overview"
-                ? "border-neutral-900 text-neutral-900"
-                : "border-transparent text-neutral-400"
+                ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
+                : "text-[var(--text-muted)] hover:text-[var(--text)]"
             }`}
           >
             Visão geral
           </button>
           <button
             onClick={() => setTab("detailed")}
-            className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
               tab === "detailed"
-                ? "border-neutral-900 text-neutral-900"
-                : "border-transparent text-neutral-400"
+                ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
+                : "text-[var(--text-muted)] hover:text-[var(--text)]"
             }`}
           >
             Detalhado (campanha / conjunto / anúncio)
@@ -252,50 +235,48 @@ export default function Dashboard() {
         </div>
 
         {loading ? (
-          <p className="py-10 text-center text-sm text-neutral-400">Carregando...</p>
+          <p className="py-10 text-center text-sm text-[var(--text-muted)]">Carregando...</p>
         ) : tab === "overview" ? (
-          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+          <div className="table-shell table-scroll">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-                <tr>
-                  <th className="px-4 py-2">Data</th>
-                  <th className="px-4 py-2">BM</th>
-                  <th className="px-4 py-2">Conta</th>
-                  <th className="px-4 py-2 text-right">Gasto</th>
-                  <th className="px-4 py-2 text-right">Impressões</th>
-                  <th className="px-4 py-2 text-right">Cliques</th>
-                  <th className="px-4 py-2 text-right">CPC</th>
-                  <th className="px-4 py-2 text-right">CPM</th>
-                  <th className="px-4 py-2 text-right">CTR</th>
+              <thead className="text-left text-xs uppercase text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">BM</th>
+                  <th className="px-4 py-3">Conta</th>
+                  <th className="px-4 py-3 text-right">Gasto</th>
+                  <th className="px-4 py-3 text-right">Impressões</th>
+                  <th className="px-4 py-3 text-right">Cliques</th>
+                  <th className="px-4 py-3 text-right">CPC</th>
+                  <th className="px-4 py-3 text-right">CPM</th>
+                  <th className="px-4 py-3 text-right">CTR</th>
                 </tr>
               </thead>
               <tbody>
                 {overviewRows.map((row) => (
-                  <tr key={row.id} className="border-t border-neutral-100">
-                    <td className="px-4 py-2">{row.date}</td>
-                    <td className="px-4 py-2">
-                      {row.ad_accounts?.business_managers?.name || "-"}
-                    </td>
-                    <td className="px-4 py-2">{row.ad_accounts?.name || row.ad_account_id}</td>
-                    <td className="px-4 py-2 text-right font-medium">
+                  <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                    <td className="px-4 py-2.5 text-[var(--text-muted)]">{row.date}</td>
+                    <td className="px-4 py-2.5">{row.ad_accounts?.business_managers?.name || "-"}</td>
+                    <td className="px-4 py-2.5">{row.ad_accounts?.name || row.ad_account_id}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[var(--text)]">
                       {formatCurrency(row.spend, row.currency)}
                     </td>
-                    <td className="px-4 py-2 text-right">{formatNumber(row.impressions)}</td>
-                    <td className="px-4 py-2 text-right">{formatNumber(row.clicks)}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.impressions)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.clicks)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
                       {formatCurrency(row.cpc, row.currency)}
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
                       {formatCurrency(row.cpm, row.currency)}
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
                       {row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"}
                     </td>
                   </tr>
                 ))}
                 {overviewRows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-neutral-400">
+                    <td colSpan={9} className="px-4 py-10 text-center text-[var(--text-muted)]">
                       Nenhum dado no período. Clique em &quot;Sincronizar agora&quot;.
                     </td>
                   </tr>
@@ -303,11 +284,11 @@ export default function Dashboard() {
               </tbody>
               {overviewRows.length > 0 && (
                 <tfoot>
-                  <tr className="border-t border-neutral-200 bg-neutral-50 font-semibold">
-                    <td className="px-4 py-2" colSpan={3}>
+                  <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
+                    <td className="px-4 py-3" colSpan={3}>
                       Total
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-3 text-right text-[var(--accent-strong)]">
                       {formatCurrency(overviewTotal, overviewRows[0]?.currency)}
                     </td>
                     <td colSpan={5} />
@@ -317,42 +298,42 @@ export default function Dashboard() {
             </table>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+          <div className="table-shell table-scroll">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-                <tr>
-                  <th className="px-4 py-2">Data</th>
-                  <th className="px-4 py-2">Conta</th>
-                  <th className="px-4 py-2">Campanha</th>
-                  <th className="px-4 py-2">Conjunto</th>
-                  <th className="px-4 py-2">Anúncio</th>
-                  <th className="px-4 py-2 text-right">Gasto</th>
-                  <th className="px-4 py-2 text-right">Impressões</th>
-                  <th className="px-4 py-2 text-right">Cliques</th>
-                  <th className="px-4 py-2 text-right">CTR</th>
+              <thead className="text-left text-xs uppercase text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Conta</th>
+                  <th className="px-4 py-3">Campanha</th>
+                  <th className="px-4 py-3">Conjunto</th>
+                  <th className="px-4 py-3">Anúncio</th>
+                  <th className="px-4 py-3 text-right">Gasto</th>
+                  <th className="px-4 py-3 text-right">Impressões</th>
+                  <th className="px-4 py-3 text-right">Cliques</th>
+                  <th className="px-4 py-3 text-right">CTR</th>
                 </tr>
               </thead>
               <tbody>
                 {detailedRows.map((row) => (
-                  <tr key={row.id} className="border-t border-neutral-100">
-                    <td className="px-4 py-2">{row.date}</td>
-                    <td className="px-4 py-2">{row.ad_accounts?.name || row.ad_account_id}</td>
-                    <td className="px-4 py-2">{row.campaign_name || "-"}</td>
-                    <td className="px-4 py-2">{row.adset_name || "-"}</td>
-                    <td className="px-4 py-2">{row.ad_name || "-"}</td>
-                    <td className="px-4 py-2 text-right font-medium">
+                  <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                    <td className="px-4 py-2.5 text-[var(--text-muted)]">{row.date}</td>
+                    <td className="px-4 py-2.5">{row.ad_accounts?.name || row.ad_account_id}</td>
+                    <td className="px-4 py-2.5">{row.campaign_name || "-"}</td>
+                    <td className="px-4 py-2.5">{row.adset_name || "-"}</td>
+                    <td className="px-4 py-2.5">{row.ad_name || "-"}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[var(--text)]">
                       {formatCurrency(row.spend, row.currency)}
                     </td>
-                    <td className="px-4 py-2 text-right">{formatNumber(row.impressions)}</td>
-                    <td className="px-4 py-2 text-right">{formatNumber(row.clicks)}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.impressions)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">{formatNumber(row.clicks)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--text-muted)]">
                       {row.ctr ? `${Number(row.ctr).toFixed(2)}%` : "-"}
                     </td>
                   </tr>
                 ))}
                 {detailedRows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-neutral-400">
+                    <td colSpan={9} className="px-4 py-10 text-center text-[var(--text-muted)]">
                       Nenhum dado no período. Clique em &quot;Sincronizar agora&quot;.
                     </td>
                   </tr>
@@ -360,11 +341,11 @@ export default function Dashboard() {
               </tbody>
               {detailedRows.length > 0 && (
                 <tfoot>
-                  <tr className="border-t border-neutral-200 bg-neutral-50 font-semibold">
-                    <td className="px-4 py-2" colSpan={5}>
+                  <tr className="border-t border-[var(--border-strong)] bg-[var(--surface-muted)] font-semibold">
+                    <td className="px-4 py-3" colSpan={5}>
                       Total
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-3 text-right text-[var(--accent-strong)]">
                       {formatCurrency(detailedTotal, detailedRows[0]?.currency)}
                     </td>
                     <td colSpan={3} />
