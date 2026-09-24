@@ -53,6 +53,8 @@ export interface InsightsAccountDaily {
   results: number | null;
   result_type: string | null;
   cost_per_result: number | null;
+  ftd: number | null;
+  cost_per_ftd: number | null;
   currency: string | null;
   synced_at: string;
 }
@@ -79,6 +81,8 @@ export interface InsightsAdDaily {
   results: number | null;
   result_type: string | null;
   cost_per_result: number | null;
+  ftd: number | null;
+  cost_per_ftd: number | null;
   currency: string | null;
   synced_at: string;
 }

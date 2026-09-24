@@ -4,11 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { daysAgoISO, todayISO } from "@/lib/format";
+import { daysAgoISO, previousPeriod, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
 import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
 import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTable";
 import { LogoutButton } from "@/components/LogoutButton";
+import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
 
 type Tab = "bm" | "account" | "detailed";
 
@@ -40,6 +41,39 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)" },
 ];
 
+function aggregateTotals(rows: SpendRow[]): PeriodTotals {
+  let spend = 0;
+  let results = 0;
+  let hasResults = false;
+  let ftd = 0;
+  let hasFtd = false;
+
+  for (const r of rows) {
+    spend += Number(r.spend || 0);
+    if (r.results != null) {
+      results += r.results;
+      hasResults = true;
+    }
+    if (r.ftd != null) {
+      ftd += r.ftd;
+      hasFtd = true;
+    }
+  }
+
+  return {
+    spend,
+    results: hasResults ? results : null,
+    costPerResult: hasResults && results > 0 ? spend / results : null,
+    ftd: hasFtd ? ftd : null,
+    costPerFtd: hasFtd && ftd > 0 ? spend / ftd : null,
+  };
+}
+
+function formatShortDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("account");
   const [since, setSince] = useState(daysAgoISO(30));
@@ -55,6 +89,9 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
+  const [compare, setCompare] = useState<{ current: PeriodTotals; previous: PeriodTotals; currency: string | null } | null>(
+    null,
+  );
 
   const loadFilters = useCallback(async () => {
     const [accRes, bmRes] = await Promise.all([fetch("/api/ad-accounts"), fetch("/api/bms")]);
@@ -96,6 +133,31 @@ export default function Dashboard() {
     }
   }, [tab, since, until, accountFilter, bmFilter]);
 
+  const loadCompare = useCallback(async () => {
+    const prev = previousPeriod(since, until);
+    const filterParam: Record<string, string> =
+      tab === "bm" ? (bmFilter ? { bm_id: bmFilter } : {}) : accountFilter ? { ad_account_id: accountFilter } : {};
+
+    async function fetchPeriod(s: string, u: string) {
+      const params = new URLSearchParams({ since: s, until: u, ...filterParam });
+      const res = await fetch(`/api/spend/overview?${params.toString()}`);
+      const json = await res.json();
+      const rows: SpendRow[] = json.data || [];
+      return { totals: aggregateTotals(rows), currency: rows[0]?.currency ?? null };
+    }
+
+    const [curr, prevTotals] = await Promise.all([
+      fetchPeriod(since, until),
+      fetchPeriod(prev.since, prev.until),
+    ]);
+
+    setCompare({
+      current: curr.totals,
+      previous: prevTotals.totals,
+      currency: curr.currency || prevTotals.currency,
+    });
+  }, [since, until, tab, accountFilter, bmFilter]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFilters();
@@ -105,7 +167,8 @@ export default function Dashboard() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
-  }, [loadData]);
+    loadCompare();
+  }, [loadData, loadCompare]);
 
   async function handleSync() {
     setSyncing(true);
@@ -124,6 +187,7 @@ export default function Dashboard() {
           `Sincronizado: ${json.accounts_synced} conta(s) ok, ${json.accounts_failed} falha(s).`,
         );
         await loadData();
+        await loadCompare();
         await loadLastSync();
       }
     } catch (err) {
@@ -195,6 +259,15 @@ export default function Dashboard() {
 
         {syncMessage && (
           <div className="mb-4 soft-panel px-4 py-2 text-sm text-[var(--text)]">{syncMessage}</div>
+        )}
+
+        {compare && (
+          <StatsSummary
+            current={compare.current}
+            previous={compare.previous}
+            currency={compare.currency}
+            previousLabel={`${formatShortDate(previousPeriod(since, until).since)}–${formatShortDate(previousPeriod(since, until).until)}`}
+          />
         )}
 
         <div className="mb-4 flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 w-fit">

@@ -5,7 +5,7 @@ import {
   fetchAccountDailyInsights,
   fetchAdLevelDailyInsights,
 } from "@/lib/meta";
-import { pickResult } from "@/lib/results";
+import { pickFtd, pickResult } from "@/lib/results";
 import type { AdAccount, MetaCredential } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +103,7 @@ export async function POST(request: Request) {
                 row.cost_per_action_type,
                 spend,
               );
+              const { ftd, costPerFtd } = pickFtd(row.actions, row.cost_per_action_type, spend);
               return {
                 ad_account_id: account.id,
                 date: row.date_start,
@@ -118,6 +119,8 @@ export async function POST(request: Request) {
                 results,
                 result_type: resultType,
                 cost_per_result: costPerResult,
+                ftd,
+                cost_per_ftd: costPerFtd,
                 currency: account.currency,
                 synced_at: new Date().toISOString(),
               };
@@ -138,6 +141,7 @@ export async function POST(request: Request) {
                 row.cost_per_action_type,
                 spend,
               );
+              const { ftd, costPerFtd } = pickFtd(row.actions, row.cost_per_action_type, spend);
               return {
                 ad_account_id: account.id,
                 date: row.date_start,
@@ -159,6 +163,8 @@ export async function POST(request: Request) {
                 results,
                 result_type: resultType,
                 cost_per_result: costPerResult,
+                ftd,
+                cost_per_ftd: costPerFtd,
                 currency: account.currency,
                 synced_at: new Date().toISOString(),
               };

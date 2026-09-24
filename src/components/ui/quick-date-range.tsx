@@ -1,11 +1,19 @@
 "use client";
 
 import { DateRangePicker } from "./date-range-picker";
-import { daysAgoISO, todayISO } from "@/lib/format";
+import { addDaysISO, daysAgoISO, todayISO } from "@/lib/format";
 
 const PRESETS = [
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
+  { label: "Hoje", range: () => ({ since: todayISO(), until: todayISO() }) },
+  {
+    label: "Ontem",
+    range: () => {
+      const y = addDaysISO(todayISO(), -1);
+      return { since: y, until: y };
+    },
+  },
+  { label: "30 dias", range: () => ({ since: daysAgoISO(30), until: todayISO() }) },
+  { label: "90 dias", range: () => ({ since: daysAgoISO(90), until: todayISO() }) },
 ];
 
 interface Props {
@@ -15,18 +23,23 @@ interface Props {
 }
 
 export function QuickDateRange({ since, until, onChange }: Props) {
-  const TODAY = todayISO();
-  const matching = PRESETS.find((p) => since === daysAgoISO(p.days) && until === TODAY);
+  const matching = PRESETS.find((p) => {
+    const r = p.range();
+    return r.since === since && r.until === until;
+  });
 
   return (
-    <div className="flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
+    <div className="flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
       {PRESETS.map((p) => (
         <button
-          key={p.days}
+          key={p.label}
           type="button"
-          onClick={() => onChange(daysAgoISO(p.days), TODAY)}
+          onClick={() => {
+            const r = p.range();
+            onChange(r.since, r.until);
+          }}
           className={`rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all ${
-            matching?.days === p.days
+            matching?.label === p.label
               ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
               : "text-[var(--text-muted)] hover:text-[var(--text)]"
           }`}
@@ -39,7 +52,7 @@ export function QuickDateRange({ since, until, onChange }: Props) {
         value={!matching ? { from: since, to: until } : null}
         onChange={(r) => {
           if (r) onChange(r.from, r.to);
-          else onChange(daysAgoISO(30), TODAY);
+          else onChange(daysAgoISO(30), todayISO());
         }}
         placeholder="Personalizado"
       />

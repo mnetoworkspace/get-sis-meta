@@ -19,6 +19,8 @@ interface AccountDailyRow {
   results: number | null;
   result_type: string | null;
   cost_per_result: number | null;
+  ftd: number | null;
+  cost_per_ftd: number | null;
   currency: string | null;
   ad_accounts: {
     name: string;
@@ -40,6 +42,8 @@ function aggregateByBm(rows: AccountDailyRow[]) {
       clicks: number;
       results: number;
       hasResults: boolean;
+      ftd: number;
+      hasFtd: boolean;
       currency: string | null;
     }
   >();
@@ -50,6 +54,7 @@ function aggregateByBm(rows: AccountDailyRow[]) {
     const key = `${bmId}__${row.date}`;
     const existing = groups.get(key);
     const results = row.results ?? 0;
+    const ftd = row.ftd ?? 0;
 
     if (existing) {
       existing.spend += Number(row.spend || 0);
@@ -57,6 +62,8 @@ function aggregateByBm(rows: AccountDailyRow[]) {
       existing.clicks += Number(row.clicks || 0);
       existing.results += results;
       existing.hasResults = existing.hasResults || row.results !== null;
+      existing.ftd += ftd;
+      existing.hasFtd = existing.hasFtd || row.ftd !== null;
     } else {
       groups.set(key, {
         bm_id: bmId,
@@ -67,6 +74,8 @@ function aggregateByBm(rows: AccountDailyRow[]) {
         clicks: Number(row.clicks || 0),
         results,
         hasResults: row.results !== null,
+        ftd,
+        hasFtd: row.ftd !== null,
         currency: row.currency,
       });
     }
@@ -85,6 +94,8 @@ function aggregateByBm(rows: AccountDailyRow[]) {
       ctr: g.impressions > 0 ? (g.clicks / g.impressions) * 100 : null,
       results: g.hasResults ? g.results : null,
       cost_per_result: g.hasResults && g.results > 0 ? g.spend / g.results : null,
+      ftd: g.hasFtd ? g.ftd : null,
+      cost_per_ftd: g.hasFtd && g.ftd > 0 ? g.spend / g.ftd : null,
       currency: g.currency,
       ad_accounts: { name: g.bm_name, currency: g.currency, bm_id: g.bm_id, business_managers: { name: g.bm_name } },
     }))

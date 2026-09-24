@@ -21,6 +21,8 @@ export interface DetailedRow {
   results: number | null;
   result_type: string | null;
   cost_per_result: number | null;
+  ftd: number | null;
+  cost_per_ftd: number | null;
   currency: string | null;
   ad_accounts?: { name: string; currency: string | null } | null;
 }
@@ -29,7 +31,18 @@ interface Props {
   rows: DetailedRow[];
 }
 
-type ColKey = "campaign" | "adset" | "ad" | "spend" | "impressions" | "clicks" | "ctr" | "results" | "cost_per_result";
+type ColKey =
+  | "campaign"
+  | "adset"
+  | "ad"
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "ctr"
+  | "results"
+  | "cost_per_result"
+  | "ftd"
+  | "cost_per_ftd";
 
 const COLUMNS: ColumnDef<ColKey>[] = [
   { key: "campaign", label: "Campanha", defaultOn: true },
@@ -41,6 +54,8 @@ const COLUMNS: ColumnDef<ColKey>[] = [
   { key: "ctr", label: "CTR", defaultOn: true },
   { key: "results", label: "Resultados", defaultOn: true },
   { key: "cost_per_result", label: "Custo/Resultado", defaultOn: true },
+  { key: "ftd", label: "FTD", defaultOn: true },
+  { key: "cost_per_ftd", label: "Custo/FTD", defaultOn: true },
 ];
 
 const ALIGN_LEFT: ColKey[] = ["campaign", "adset", "ad"];
@@ -62,6 +77,8 @@ export function DetailedTable({ rows }: Props) {
     ctr: (r) => r.ctr,
     results: (r) => r.results,
     cost_per_result: (r) => r.cost_per_result,
+    ftd: (r) => r.ftd,
+    cost_per_ftd: (r) => r.cost_per_ftd,
   };
 
   // Ordem padrão: alfanumérico pela conta, depois campanha, depois data mais recente.
@@ -105,6 +122,8 @@ export function DetailedTable({ rows }: Props) {
       </>
     ),
     cost_per_result: (row) => (row.cost_per_result != null ? formatCurrency(row.cost_per_result, row.currency) : "-"),
+    ftd: (row) => (row.ftd != null ? formatNumber(row.ftd) : "-"),
+    cost_per_ftd: (row) => (row.cost_per_ftd != null ? formatCurrency(row.cost_per_ftd, row.currency) : "-"),
   };
 
   const colCount = 2 + orderedVisible.length;
