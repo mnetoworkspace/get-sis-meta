@@ -146,8 +146,8 @@ export function SpendTable({ rows, mode }: Props) {
   const colCount = 2 + orderedVisible.length;
 
   return (
-    <div className="table-shell table-scroll">
-      <div className="flex items-center justify-end border-b border-[var(--border)] px-3 py-2">
+    <div className="table-shell">
+      <div className="flex items-center justify-start border-b border-[var(--border)] px-3 py-2">
         <ColumnManagerButton
           panelId={`spend-col-panel-${mode}`}
           columns={columns}
@@ -160,6 +160,7 @@ export function SpendTable({ rows, mode }: Props) {
           onReset={resetToDefault}
         />
       </div>
+      <div className="table-scroll">
       <table className="w-full text-sm">
         <thead className="text-xs uppercase text-[var(--text-muted)]">
           <tr className="border-b border-[var(--border)]">
@@ -231,6 +232,7 @@ export function SpendTable({ rows, mode }: Props) {
           );
         })()}
       </table>
+      </div>
     </div>
   );
 }
