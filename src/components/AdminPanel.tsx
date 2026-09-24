@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 
@@ -37,6 +37,7 @@ export default function AdminPanel() {
     app_secret: "",
     label: "",
   });
+  const [editingBmId, setEditingBmId] = useState<string | null>(null);
 
   const [accountForm, setAccountForm] = useState({
     id: "",
@@ -44,6 +45,7 @@ export default function AdminPanel() {
     name: "",
     currency: "",
   });
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
 
   async function loadAll() {
     const [bmsRes, accRes] = await Promise.all([
@@ -67,12 +69,53 @@ export default function AdminPanel() {
       const res = await fetch("/api/bms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bmForm),
+        body: JSON.stringify({ ...bmForm, is_edit: Boolean(editingBmId) }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setMessage("BM e credencial salvos.");
-      setBmForm({ id: "", name: "", system_user_token: "", app_id: "", app_secret: "", label: "" });
+      setMessage(editingBmId ? "BM atualizado." : "BM e credencial salvos.");
+      cancelEditBm();
+      await loadAll();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function editBm(bm: BmRow) {
+    setEditingBmId(bm.id);
+    setBmForm({
+      id: bm.id,
+      name: bm.name,
+      system_user_token: "",
+      app_id: bm.meta_credentials?.app_id || "",
+      app_secret: "",
+      label: bm.meta_credentials?.label || "",
+    });
+    setMessage(null);
+  }
+
+  function cancelEditBm() {
+    setEditingBmId(null);
+    setBmForm({ id: "", name: "", system_user_token: "", app_id: "", app_secret: "", label: "" });
+  }
+
+  async function deleteBm(bm: BmRow) {
+    if (
+      !confirm(
+        `Remover o BM "${bm.name}"? Isso apaga também ${bm.ad_accounts.length} conta(s) de anúncio e todo o histórico de dados associado. Essa ação não pode ser desfeita.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/bms/${bm.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setMessage("BM removido.");
+      if (editingBmId === bm.id) cancelEditBm();
       await loadAll();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Erro desconhecido");
@@ -93,8 +136,47 @@ export default function AdminPanel() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setMessage("Conta de anúncio salva.");
-      setAccountForm({ id: "", bm_id: "", name: "", currency: "" });
+      setMessage(editingAccountId ? "Conta atualizada." : "Conta de anúncio salva.");
+      cancelEditAccount();
+      await loadAll();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function editAccount(acc: AdAccountRow) {
+    setEditingAccountId(acc.id);
+    setAccountForm({
+      id: acc.id,
+      bm_id: acc.bm_id,
+      name: acc.name,
+      currency: acc.currency || "",
+    });
+    setMessage(null);
+  }
+
+  function cancelEditAccount() {
+    setEditingAccountId(null);
+    setAccountForm({ id: "", bm_id: "", name: "", currency: "" });
+  }
+
+  async function deleteAccount(acc: AdAccountRow) {
+    if (
+      !confirm(
+        `Remover a conta "${acc.name}"? Isso apaga todo o histórico de gastos, tráfego e depósitos associado a ela. Essa ação não pode ser desfeita.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/ad-accounts/${acc.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setMessage("Conta removida.");
+      if (editingAccountId === acc.id) cancelEditAccount();
       await loadAll();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Erro desconhecido");
@@ -145,14 +227,27 @@ export default function AdminPanel() {
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
         <section className="card p-5">
-          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">1. Adicionar Business Manager + token</h2>
+          <h2 className="mb-4 flex items-center justify-between text-sm font-semibold text-[var(--text)]">
+            <span>1. {editingBmId ? "Editar Business Manager" : "Adicionar Business Manager + token"}</span>
+            {editingBmId && (
+              <button
+                type="button"
+                onClick={cancelEditBm}
+                className="flex items-center gap-1 text-xs font-normal text-[var(--text-muted)] hover:text-[var(--text)]"
+              >
+                <X size={12} />
+                Cancelar edição
+              </button>
+            )}
+          </h2>
           <form onSubmit={submitBm} className="grid grid-cols-2 gap-3">
             <input
               placeholder="BM ID"
               value={bmForm.id}
               onChange={(e) => setBmForm({ ...bmForm, id: e.target.value })}
-              className="input"
+              className="input disabled:opacity-60"
               required
+              disabled={Boolean(editingBmId)}
             />
             <input
               placeholder="Nome do BM"
@@ -162,11 +257,11 @@ export default function AdminPanel() {
               required
             />
             <input
-              placeholder="System User Token"
+              placeholder={editingBmId ? "System User Token (deixe em branco para manter o atual)" : "System User Token"}
               value={bmForm.system_user_token}
               onChange={(e) => setBmForm({ ...bmForm, system_user_token: e.target.value })}
               className="input col-span-2"
-              required
+              required={!editingBmId}
             />
             <input
               placeholder="App ID (opcional)"
@@ -188,7 +283,7 @@ export default function AdminPanel() {
               className="input col-span-2"
             />
             <button disabled={busy} className="btn-primary col-span-2">
-              Salvar BM
+              {editingBmId ? "Salvar alterações" : "Salvar BM"}
             </button>
           </form>
         </section>
@@ -208,14 +303,32 @@ export default function AdminPanel() {
                     {bm.ad_accounts.length} conta(s)
                   </p>
                 </div>
-                <button
-                  onClick={() => importAccounts(bm.id)}
-                  disabled={busy}
-                  className="btn-secondary flex items-center gap-1.5 py-1.5 px-3 text-xs"
-                >
-                  <Download size={12} />
-                  Importar contas da Meta
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => importAccounts(bm.id)}
+                    disabled={busy}
+                    className="btn-secondary flex items-center gap-1.5 py-1.5 px-3 text-xs"
+                  >
+                    <Download size={12} />
+                    Importar contas da Meta
+                  </button>
+                  <button
+                    onClick={() => editBm(bm)}
+                    disabled={busy}
+                    title="Editar"
+                    className="btn-secondary flex items-center gap-1 py-1.5 px-2.5 text-xs"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    onClick={() => deleteBm(bm)}
+                    disabled={busy}
+                    title="Remover"
+                    className="btn-secondary flex items-center gap-1 py-1.5 px-2.5 text-xs text-red-400 hover:text-red-300"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </li>
             ))}
             {bms.length === 0 && (
@@ -225,14 +338,27 @@ export default function AdminPanel() {
         </section>
 
         <section className="card p-5">
-          <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">2. Adicionar conta de anúncio manualmente</h2>
+          <h2 className="mb-4 flex items-center justify-between text-sm font-semibold text-[var(--text)]">
+            <span>2. {editingAccountId ? "Editar conta de anúncio" : "Adicionar conta de anúncio manualmente"}</span>
+            {editingAccountId && (
+              <button
+                type="button"
+                onClick={cancelEditAccount}
+                className="flex items-center gap-1 text-xs font-normal text-[var(--text-muted)] hover:text-[var(--text)]"
+              >
+                <X size={12} />
+                Cancelar edição
+              </button>
+            )}
+          </h2>
           <form onSubmit={submitAccount} className="grid grid-cols-2 gap-3">
             <input
               placeholder="Ad Account ID (act_123... ou só o número)"
               value={accountForm.id}
               onChange={(e) => setAccountForm({ ...accountForm, id: e.target.value })}
-              className="input col-span-2"
+              className="input col-span-2 disabled:opacity-60"
               required
+              disabled={Boolean(editingAccountId)}
             />
             <select
               value={accountForm.bm_id}
@@ -261,7 +387,7 @@ export default function AdminPanel() {
               className="input col-span-2"
             />
             <button disabled={busy} className="btn-primary col-span-2">
-              Salvar conta
+              {editingAccountId ? "Salvar alterações" : "Salvar conta"}
             </button>
           </form>
         </section>
@@ -270,12 +396,32 @@ export default function AdminPanel() {
           <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">Contas de anúncio cadastradas</h2>
           <ul className="space-y-1.5">
             {adAccounts.map((acc) => (
-              <li key={acc.id} className="flex justify-between text-sm">
+              <li key={acc.id} className="flex items-center justify-between text-sm">
                 <span className="text-[var(--text)]">{acc.name}</span>
-                <span className="text-[var(--text-muted)]">
-                  {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"} ·{" "}
-                  {acc.funding_source || "sem cartão"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[var(--text-muted)]">
+                    {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"} ·{" "}
+                    {acc.funding_source || "sem cartão"}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => editAccount(acc)}
+                      disabled={busy}
+                      title="Editar"
+                      className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      onClick={() => deleteAccount(acc)}
+                      disabled={busy}
+                      title="Remover"
+                      className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs text-red-400 hover:text-red-300"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
               </li>
             ))}
             {adAccounts.length === 0 && (
