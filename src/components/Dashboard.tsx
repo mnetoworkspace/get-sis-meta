@@ -11,8 +11,9 @@ import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTab
 import { LogoutButton } from "@/components/LogoutButton";
 import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
 import { TrafficTab } from "@/components/tables/TrafficTab";
+import { DepositsTab } from "@/components/tables/DepositsTab";
 
-type Tab = "bm" | "account" | "detailed" | "traffic";
+type Tab = "bm" | "account" | "detailed" | "traffic" | "deposits";
 
 interface AdAccountOption {
   id: string;
@@ -41,6 +42,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "account", label: "Por Conta" },
   { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)" },
   { key: "traffic", label: "Tráfego" },
+  { key: "deposits", label: "Depósitos" },
 ];
 
 function aggregateTotals(rows: SpendRow[]): PeriodTotals {
@@ -109,7 +111,7 @@ export default function Dashboard() {
   }, []);
 
   const loadData = useCallback(async () => {
-    if (tab === "traffic") return;
+    if (tab === "traffic" || tab === "deposits") return;
     setLoading(true);
     try {
       if (tab === "detailed") {
@@ -236,7 +238,7 @@ export default function Dashboard() {
                 </option>
               ))}
             </select>
-          ) : tab !== "traffic" ? (
+          ) : tab !== "traffic" && tab !== "deposits" ? (
             <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="input">
               <option value="">Todas as contas</option>
               {accounts.map((acc) => (
@@ -295,6 +297,8 @@ export default function Dashboard() {
             antes do remount seguinte. */}
         {tab === "traffic" ? (
           <TrafficTab since={since} until={until} />
+        ) : tab === "deposits" ? (
+          <DepositsTab since={since} until={until} />
         ) : (
           <div className={loading ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
             {tab === "bm" ? (

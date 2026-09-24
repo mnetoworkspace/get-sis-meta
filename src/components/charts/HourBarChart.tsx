@@ -1,6 +1,7 @@
 "use client";
 
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
+import { formatAxisNumber } from "@/lib/format";
 
 interface Point {
   hour: number;
@@ -63,8 +64,8 @@ export function HourBarChart({ title, data, color, formatValue }: Props) {
               tick={{ fill: "var(--text-muted)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              width={44}
-              tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v))}
+              width={52}
+              tickFormatter={formatAxisNumber}
             />
             <Tooltip content={<ChartTooltip formatValue={formatValue} />} cursor={{ fill: "var(--surface-muted)" }} />
             <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={18}>

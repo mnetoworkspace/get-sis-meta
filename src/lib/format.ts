@@ -14,6 +14,15 @@ export function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("pt-BR").format(value ?? 0);
 }
 
+// Rótulo curto pra eixos de gráfico (largura apertada) — evita "3068.0k"
+// (8 caracteres, clipa) trocando por "3.1M" a partir de 1 milhão.
+export function formatAxisNumber(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }

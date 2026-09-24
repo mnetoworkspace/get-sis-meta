@@ -1,6 +1,7 @@
 "use client";
 
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { formatAxisNumber } from "@/lib/format";
 
 interface Point {
   x: string;
@@ -57,8 +58,8 @@ export function LineTrendChart({ title, data, color, formatValue, formatX }: Pro
               tick={{ fill: "var(--text-muted)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              width={44}
-              tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v))}
+              width={52}
+              tickFormatter={formatAxisNumber}
             />
             <Tooltip
               content={<ChartTooltip formatValue={formatValue} formatX={formatX} />}

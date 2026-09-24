@@ -1,19 +1,36 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase";
 import {
-  MetaApiError,
   fetchAccountDailyInsights,
   fetchAccountHourlyInsights,
   fetchAdLevelDailyInsights,
 } from "@/lib/meta";
 import { pickFtd, pickResult } from "@/lib/results";
-import { FathomApiError, fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
+import { fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
+import { fetchAllDeposits } from "@/lib/payments";
+import { fetchExchangeRate } from "@/lib/fx";
 import type { AdAccount, MetaCredential } from "@/types/db";
 
 // "00:00:00 - 00:59:59" -> 0
 function parseHourBucket(label: string): number {
   const match = label.match(/^(\d{1,2}):/);
   return match ? Number(match[1]) : 0;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Erros do Supabase/PostgREST são objetos { message, code, ... }, não
+// instanceof Error — sem isso caem no fallback genérico e escondem a causa.
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+    return err.message;
+  }
+  return "Erro desconhecido";
 }
 
 export const dynamic = "force-dynamic";
@@ -219,13 +236,7 @@ export async function POST(request: Request) {
           accountsSynced += 1;
         } catch (err) {
           accountsFailed += 1;
-          const message =
-            err instanceof MetaApiError
-              ? err.message
-              : err instanceof Error
-                ? err.message
-                : "Erro desconhecido";
-          errors.push({ ad_account_id: account.id, message });
+          errors.push({ ad_account_id: account.id, message: errorMessage(err) });
         }
       }
     }
@@ -256,14 +267,90 @@ export async function POST(request: Request) {
           if (upsertError) throw upsertError;
         }
       } catch (err) {
-        const message =
-          err instanceof FathomApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : "Erro desconhecido";
-        errors.push({ ad_account_id: "fathom", message });
+        errors.push({ ad_account_id: "fathom", message: errorMessage(err) });
       }
+    }
+
+    try {
+      const deposits = await fetchAllDeposits(since, until);
+
+      if (deposits.length > 0) {
+        const rows = deposits.map((d) => ({
+          id: d.id,
+          player_id: d.player_id,
+          amount: d.amount,
+          currency: d.currency,
+          status: d.status,
+          payment_method: d.payment_method,
+          payment_method_name: d.payment_method_name,
+          gateway: d.gateway,
+          test_user: d.test_user,
+          created_at: d.created_at,
+          processed_at: d.processed_at,
+          synced_at: new Date().toISOString(),
+        }));
+
+        const { error: upsertError } = await supabase.from("deposits").upsert(rows, { onConflict: "id" });
+        if (upsertError) throw upsertError;
+
+        // Reconcilia FTD: pra cada jogador que apareceu neste lote, o depósito
+        // COMPLETED mais antigo que já temos guardado vira o FTD; os demais não.
+        // As chamadas .in() são feitas em lotes pequenos — com centenas de ids
+        // de uma vez a URL passa dos ~8KB e a infra (proxy/CDN) rejeita com 400
+        // antes de chegar no Postgres.
+        const playerIds = [...new Set(deposits.filter((d) => d.status === "COMPLETED").map((d) => d.player_id))];
+
+        if (playerIds.length > 0) {
+          const firstByPlayer = new Map<string, { id: string; created_at: string }>();
+          const allExistingIds: string[] = [];
+
+          for (const playerChunk of chunk(playerIds, 50)) {
+            const { data: existing, error: existingError } = await supabase
+              .from("deposits")
+              .select("id, player_id, created_at")
+              .in("player_id", playerChunk)
+              .eq("status", "COMPLETED");
+
+            if (existingError) throw existingError;
+
+            for (const d of existing || []) {
+              allExistingIds.push(d.id);
+              const curr = firstByPlayer.get(d.player_id);
+              if (!curr || d.created_at < curr.created_at) firstByPlayer.set(d.player_id, d);
+            }
+          }
+
+          const ftdIds = new Set([...firstByPlayer.values()].map((d) => d.id));
+          const nonFtdIds = allExistingIds.filter((id) => !ftdIds.has(id));
+
+          for (const idChunk of chunk([...ftdIds], 100)) {
+            const { error } = await supabase.from("deposits").update({ is_ftd: true }).in("id", idChunk);
+            if (error) throw error;
+          }
+          for (const idChunk of chunk(nonFtdIds, 100)) {
+            const { error } = await supabase.from("deposits").update({ is_ftd: false }).in("id", idChunk);
+            if (error) throw error;
+          }
+        }
+      }
+
+      // Cotação pra cada moeda de depósito != BRL, usada pra comparar com o
+      // gasto de anúncio (sempre em BRL) sem misturar os valores nativos.
+      const foreignCurrencies = [...new Set(deposits.map((d) => d.currency).filter((c) => c !== "BRL"))];
+      for (const currency of foreignCurrencies) {
+        const rate = await fetchExchangeRate(currency, "BRL");
+        if (rate != null) {
+          const { error } = await supabase
+            .from("fx_rates")
+            .upsert(
+              { base_currency: currency, quote_currency: "BRL", rate, fetched_at: new Date().toISOString() },
+              { onConflict: "base_currency,quote_currency" },
+            );
+          if (error) throw error;
+        }
+      }
+    } catch (err) {
+      errors.push({ ad_account_id: "deposits", message: errorMessage(err) });
     }
 
     const status = accountsFailed === 0 ? "success" : accountsSynced === 0 ? "error" : "partial";
@@ -288,7 +375,7 @@ export async function POST(request: Request) {
       errors,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erro desconhecido";
+    const message = errorMessage(err);
 
     await supabase
       .from("sync_logs")
