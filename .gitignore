@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# estado local do Claude Code (agendamentos, etc.) — não é do projeto
+/.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
