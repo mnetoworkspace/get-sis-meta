@@ -14,6 +14,7 @@ import { TrafficTab } from "@/components/tables/TrafficTab";
 import { DepositsTab } from "@/components/tables/DepositsTab";
 import { AccountMultiSelect } from "@/components/ui/account-multi-select";
 import { PushNotificationToggle } from "@/components/push/push-notification-toggle";
+import { MobileNavMenu } from "@/components/ui/mobile-nav-menu";
 
 type Tab = "bm" | "account" | "detailed" | "traffic";
 
@@ -280,35 +281,45 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href="/rules"
-              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
-            >
-              <Zap size={14} />
-              <span className="hidden sm:inline">Regras</span>
-            </Link>
-            <Link
-              href="/admin"
-              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
-            >
-              <Settings size={14} />
-              <span className="hidden sm:inline">Gerenciar BMs e contas</span>
-            </Link>
-            <Link
-              href="/status"
-              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
-            >
-              <Activity size={14} />
-              <span className="hidden sm:inline">Status</span>
-            </Link>
-            <Link
-              href="/notifications"
-              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
-            >
-              <Bell size={14} />
-              <span className="hidden sm:inline">Notificações</span>
-            </Link>
+          <div className="flex items-center justify-end gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
+              <Link
+                href="/rules"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+              >
+                <Zap size={14} />
+                Regras
+              </Link>
+              <Link
+                href="/admin"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+              >
+                <Settings size={14} />
+                Gerenciar BMs e contas
+              </Link>
+              <Link
+                href="/status"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+              >
+                <Activity size={14} />
+                Status
+              </Link>
+              <Link
+                href="/notifications"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+              >
+                <Bell size={14} />
+                Notificações
+              </Link>
+            </div>
+            <MobileNavMenu
+              items={[
+                { href: "/rules", label: "Regras", icon: Zap },
+                { href: "/admin", label: "Gerenciar BMs e contas", icon: Settings },
+                { href: "/status", label: "Status", icon: Activity },
+                { href: "/notifications", label: "Notificações", icon: Bell },
+              ]}
+            />
             <PushNotificationToggle />
             <LogoutButton />
           </div>
