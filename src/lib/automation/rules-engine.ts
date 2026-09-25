@@ -134,11 +134,18 @@ async function buildMetrics(row: ObjectInsight, currency: string | null): Promis
   const { ftd, costPerFtd } = pickFtd(row.actions, row.cost_per_action_type, spendBrl);
   const { results, costPerResult } = pickResult(row.actions, row.cost_per_action_type, spendBrl);
 
+  // pickFtd/pickResult devolvem null quando a Meta simplesmente não lista o
+  // action_type (que é como ela representa "zero" — não manda a entrada com
+  // valor 0). Pra regras (diferente dos gráficos, onde null vira "sem dado"
+  // visualmente), essa linha só existe porque o objeto teve insight real no
+  // período — então "sem essa ação" é uma contagem real de zero, não dado
+  // ausente. Sem esse fallback, uma condição como "ftd = 0" nunca dispara,
+  // que é exatamente o caso que ela existe pra pegar.
   return {
     spend: spendBrl,
-    ftd,
+    ftd: ftd ?? 0,
     cost_per_ftd: costPerFtd,
-    results,
+    results: results ?? 0,
     cost_per_result: costPerResult,
   };
 }
