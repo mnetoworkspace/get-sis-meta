@@ -223,12 +223,18 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/rules" className="btn-secondary flex items-center gap-1.5 text-sm">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href="/rules"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
+            >
               <Zap size={14} />
               <span className="hidden sm:inline">Regras</span>
             </Link>
-            <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
+            <Link
+              href="/admin"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
+            >
               <Settings size={14} />
               <span className="hidden sm:inline">Gerenciar BMs e contas</span>
             </Link>

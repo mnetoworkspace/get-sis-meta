@@ -213,8 +213,11 @@ export default function AdminPanel() {
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
             <h1 className="text-lg font-semibold text-[var(--text)]">Gerenciar BMs e contas</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
+            >
               <ArrowLeft size={14} />
               <span className="hidden sm:inline">Voltar ao dashboard</span>
             </Link>
