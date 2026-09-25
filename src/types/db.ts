@@ -63,12 +63,10 @@ export interface InsightsAccountDaily {
 export interface AutomationRule {
   id: string;
   name: string;
-  scope: "adset";
-  metric: "spend";
-  threshold: number;
-  condition: "no_ftd";
+  scope: "campaign" | "adset" | "ad";
   time_window: "today" | "lifetime";
-  action: "pause";
+  action: "pause" | "activate";
+  rules: import("@/lib/automation/rule-types").RuleConditionGroup;
   bm_ids: string[];
   is_active: boolean;
   created_at: string;

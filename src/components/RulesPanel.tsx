@@ -5,35 +5,57 @@ import Link from "next/link";
 import { ArrowLeft, Check, Pencil, PlayCircle, Trash2, X, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
+import { ConditionGroupEditor } from "@/components/automation/condition-group-editor";
+import { describeGroup, emptyConditionGroup, type RuleConditionGroup } from "@/lib/automation/rule-types";
 
 interface BmOption {
   id: string;
   name: string;
 }
 
+type Scope = "campaign" | "adset" | "ad";
+type Action = "pause" | "activate";
+
 interface RuleRow {
   id: string;
   name: string;
-  threshold: number;
+  scope: Scope;
+  action: Action;
   time_window: "today" | "lifetime";
+  rules: RuleConditionGroup;
   bm_ids: string[];
   is_active: boolean;
 }
 
-const emptyForm = {
-  name: "",
-  threshold: "",
-  time_window: "today" as "today" | "lifetime",
-  bm_ids: [] as string[],
-  is_active: true,
+const SCOPE_LABEL: Record<Scope, string> = {
+  campaign: "Campanha",
+  adset: "Conjunto de anúncios",
+  ad: "Anúncio",
 };
+
+const ACTION_LABEL: Record<Action, string> = {
+  pause: "Pausar",
+  activate: "Ativar",
+};
+
+function emptyForm() {
+  return {
+    name: "",
+    scope: "adset" as Scope,
+    action: "pause" as Action,
+    time_window: "today" as "today" | "lifetime",
+    bm_ids: [] as string[],
+    is_active: true,
+    rules: emptyConditionGroup(),
+  };
+}
 
 export default function RulesPanel() {
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [bms, setBms] = useState<BmOption[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -44,14 +66,14 @@ export default function RulesPanel() {
       const res = await fetch("/api/automation-rules/run", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      const { rulesEvaluated, accountsChecked, adSetsPaused, errors } = json as {
+      const { rulesEvaluated, accountsChecked, objectsActioned, errors } = json as {
         rulesEvaluated: number;
         accountsChecked: number;
-        adSetsPaused: number;
+        objectsActioned: number;
         errors: string[];
       };
       setMessage(
-        `Checagem concluída: ${rulesEvaluated} regra(s), ${accountsChecked} conta(s), ${adSetsPaused} conjunto(s) pausado(s)` +
+        `Checagem concluída: ${rulesEvaluated} regra(s), ${accountsChecked} conta(s), ${objectsActioned} objeto(s) alterado(s)` +
           (errors.length > 0 ? ` — ${errors.length} erro(s): ${errors[0]}` : "."),
       );
     } catch (err) {
@@ -84,28 +106,35 @@ export default function RulesPanel() {
     setEditingId(rule.id);
     setForm({
       name: rule.name,
-      threshold: String(rule.threshold),
+      scope: rule.scope,
+      action: rule.action,
       time_window: rule.time_window,
       bm_ids: rule.bm_ids,
       is_active: rule.is_active,
+      rules: rule.rules ?? emptyConditionGroup(),
     });
     setMessage(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm(emptyForm());
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const validConditions = form.rules.conditions.filter((c) => c.value.trim() !== "");
+    if (validConditions.length === 0) {
+      setMessage("Adicione pelo menos uma condição com valor preenchido.");
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
       const res = await fetch(editingId ? `/api/automation-rules/${editingId}` : "/api/automation-rules", {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, rules: { ...form.rules, conditions: validConditions } }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
@@ -188,10 +217,10 @@ export default function RulesPanel() {
 
         <div className="flex flex-col gap-3 soft-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-[var(--text-muted)]">
-            Por enquanto só existe um tipo de regra: um conjunto de anúncio gasta um valor em R$ sem
-            gerar nenhum FTD no período escolhido → o sistema pausa o conjunto automaticamente e avisa
-            por notificação. A checagem roda sozinha no ciclo automático do sistema (a cada 5 minutos
-            por padrão), mas dá pra forçar uma checagem na hora sem esperar.
+            Cada regra escolhe um nível (campanha, conjunto ou anúncio), uma ou mais condições (gasto,
+            FTD, custo/FTD, resultados, custo/resultado) e uma ação (pausar ou ativar). A checagem roda
+            sozinha no ciclo automático do sistema (a cada 5 minutos por padrão), mas dá pra forçar uma
+            checagem na hora sem esperar.
           </p>
           <button
             onClick={runCheckNow}
@@ -219,28 +248,40 @@ export default function RulesPanel() {
           </h2>
           <form onSubmit={submit} className="space-y-3">
             <input
-              placeholder="Nome da regra (ex: Pausar sem FTD)"
+              placeholder="Nome da regra (ex: Pausar conjunto sem FTD)"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="input w-full"
               required
             />
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Gasto sem FTD (R$)
+                  Nível
                 </label>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="60"
-                  value={form.threshold}
-                  onChange={(e) => setForm({ ...form, threshold: e.target.value })}
+                <select
+                  value={form.scope}
+                  onChange={(e) => setForm({ ...form, scope: e.target.value as Scope })}
                   className="input w-full"
-                  required
-                />
+                >
+                  <option value="campaign">Campanha</option>
+                  <option value="adset">Conjunto de anúncios</option>
+                  <option value="ad">Anúncio</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Ação
+                </label>
+                <select
+                  value={form.action}
+                  onChange={(e) => setForm({ ...form, action: e.target.value as Action })}
+                  className="input w-full"
+                >
+                  <option value="pause">Pausar</option>
+                  <option value="activate">Ativar</option>
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -251,10 +292,17 @@ export default function RulesPanel() {
                   onChange={(e) => setForm({ ...form, time_window: e.target.value as "today" | "lifetime" })}
                   className="input w-full"
                 >
-                  <option value="today">Só o gasto de hoje (reseta todo dia)</option>
+                  <option value="today">Só hoje (reseta todo dia)</option>
                   <option value="lifetime">Acumulado desde sempre</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Condições
+              </label>
+              <ConditionGroupEditor group={form.rules} onChange={(rules) => setForm({ ...form, rules })} />
             </div>
 
             <div>
@@ -328,8 +376,8 @@ export default function RulesPanel() {
                     {!rule.is_active && <span className="text-xs font-normal text-[var(--text-muted)]">(inativa)</span>}
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Gasto ≥ R$ {rule.threshold.toFixed(2)} sem FTD ({rule.time_window === "lifetime" ? "acumulado" : "hoje"}) ·{" "}
-                    {bmScopeLabel(rule.bm_ids)}
+                    {ACTION_LABEL[rule.action]} {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
+                    {" "}({rule.time_window === "lifetime" ? "acumulado" : "hoje"}) · {bmScopeLabel(rule.bm_ids)}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">

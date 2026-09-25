@@ -254,76 +254,108 @@ export async function fetchAdLevelDailyInsights(
   });
 }
 
-const ADSET_INSIGHT_FIELDS =
-  "campaign_id,campaign_name,adset_id,adset_name,spend,actions,cost_per_action_type";
+// Usado pelo motor de regras de automação (ver src/lib/automation/rules-engine.ts).
+// "level" decide se o objeto avaliado/controlado é a campanha, o conjunto de
+// anúncios ou o anúncio — a Graph API de insights e a de status/ação
+// funcionam do mesmo jeito nos três níveis, só muda o campo de ID e os
+// campos extras de contexto que fazem sentido pedir.
+export type RuleScope = "campaign" | "adset" | "ad";
 
-export interface AdSetDailyInsight {
+const OBJECT_INSIGHT_FIELDS: Record<RuleScope, string> = {
+  campaign: "campaign_id,campaign_name,spend,actions,cost_per_action_type",
+  adset: "campaign_id,campaign_name,adset_id,adset_name,spend,actions,cost_per_action_type",
+  ad: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,actions,cost_per_action_type",
+};
+
+export interface ObjectInsight {
   date_start: string;
   date_stop: string;
   campaign_id: string;
   campaign_name?: string;
-  adset_id: string;
+  adset_id?: string;
   adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
   spend?: string;
   actions?: MetaAction[];
   cost_per_action_type?: MetaAction[];
 }
 
-// Usado pelo motor de regras de automação (ver src/lib/automation/rules-engine.ts) —
-// nível "adset" traz só o necessário pra avaliar a condição, bem mais leve que
-// puxar todos os anúncios da conta a cada checagem.
-export async function fetchAdSetDailyInsights(
+// ID do objeto que essa linha de insight representa, de acordo com o nível
+// da regra — é o que vai ser pausado/ativado se a condição bater.
+export function objectIdFromInsight(row: ObjectInsight, scope: RuleScope): string | undefined {
+  if (scope === "campaign") return row.campaign_id;
+  if (scope === "adset") return row.adset_id;
+  return row.ad_id;
+}
+
+export function objectNameFromInsight(row: ObjectInsight, scope: RuleScope): string | undefined {
+  if (scope === "campaign") return row.campaign_name;
+  if (scope === "adset") return row.adset_name;
+  return row.ad_name;
+}
+
+export async function fetchObjectDailyInsights(
   adAccountId: string,
   token: string,
+  scope: RuleScope,
   since: string,
   until: string,
-): Promise<AdSetDailyInsight[]> {
-  return graphGetAllPages<AdSetDailyInsight>(`/${adAccountId}/insights`, {
-    level: "adset",
+): Promise<ObjectInsight[]> {
+  return graphGetAllPages<ObjectInsight>(`/${adAccountId}/insights`, {
+    level: scope,
     time_increment: "1",
     time_range: JSON.stringify({ since, until }),
-    fields: ADSET_INSIGHT_FIELDS,
+    fields: OBJECT_INSIGHT_FIELDS[scope],
     access_token: token,
     limit: "500",
   });
 }
 
-// Totais acumulados desde sempre (uma linha por adset, sem quebra diária) —
-// usado por regras com window="lifetime".
-export async function fetchAdSetLifetimeInsights(
+// Totais acumulados desde sempre (uma linha por objeto, sem quebra diária) —
+// usado por regras com time_window="lifetime".
+export async function fetchObjectLifetimeInsights(
   adAccountId: string,
   token: string,
-): Promise<AdSetDailyInsight[]> {
-  return graphGetAllPages<AdSetDailyInsight>(`/${adAccountId}/insights`, {
-    level: "adset",
+  scope: RuleScope,
+): Promise<ObjectInsight[]> {
+  return graphGetAllPages<ObjectInsight>(`/${adAccountId}/insights`, {
+    level: scope,
     date_preset: "maximum",
-    fields: ADSET_INSIGHT_FIELDS,
+    fields: OBJECT_INSIGHT_FIELDS[scope],
     access_token: token,
     limit: "500",
   });
 }
 
-export type AdSetEffectiveStatus =
+export type MetaEffectiveStatus =
   | "ACTIVE"
   | "PAUSED"
   | "DELETED"
   | "ARCHIVED"
   | "CAMPAIGN_PAUSED"
+  | "ADSET_PAUSED"
   | string;
 
-// Status atual do conjunto — checado antes de pausar pra não gastar chamada
-// de API repausando algo que já está pausado/arquivado/deletado.
-export async function fetchAdSetStatus(adSetId: string, token: string): Promise<AdSetEffectiveStatus> {
-  const json = await graphGet<{ effective_status: AdSetEffectiveStatus }>(`/${adSetId}`, {
+// Status atual do objeto — checado antes de agir pra não gastar chamada de
+// API repetindo uma ação que já está feita (ex: pausar o que já tá pausado).
+export async function fetchObjectStatus(objectId: string, token: string): Promise<MetaEffectiveStatus> {
+  const json = await graphGet<{ effective_status: MetaEffectiveStatus }>(`/${objectId}`, {
     fields: "effective_status",
     access_token: token,
   });
   return json.effective_status;
 }
 
-export async function pauseAdSet(adSetId: string, token: string): Promise<void> {
-  await graphPost<{ success: boolean }>(`/${adSetId}`, {
-    status: "PAUSED",
+// Funciona pra campanha, conjunto ou anúncio — o node de update da Graph API
+// é o mesmo nos três casos, só muda o ID passado.
+export async function setObjectStatus(
+  objectId: string,
+  status: "PAUSED" | "ACTIVE",
+  token: string,
+): Promise<void> {
+  await graphPost<{ success: boolean }>(`/${objectId}`, {
+    status,
     access_token: token,
   });
 }
