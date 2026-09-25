@@ -6,7 +6,16 @@ import { ArrowLeft, Check, Pencil, PlayCircle, Trash2, X, Zap } from "lucide-rea
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { ConditionGroupEditor } from "@/components/automation/condition-group-editor";
-import { describeGroup, emptyConditionGroup, type RuleConditionGroup } from "@/lib/automation/rule-types";
+import {
+  ACTION_OPTIONS,
+  actionLabel,
+  describeGroup,
+  emptyConditionGroup,
+  isBudgetAction,
+  type BudgetAdjustmentType,
+  type RuleAction,
+  type RuleConditionGroup,
+} from "@/lib/automation/rule-types";
 
 interface BmOption {
   id: string;
@@ -14,15 +23,16 @@ interface BmOption {
 }
 
 type Scope = "campaign" | "adset" | "ad";
-type Action = "pause" | "activate";
 
 interface RuleRow {
   id: string;
   name: string;
   scope: Scope;
-  action: Action;
+  action: RuleAction;
   time_window: "today" | "lifetime";
   rules: RuleConditionGroup;
+  budget_adjustment_type: BudgetAdjustmentType | null;
+  budget_adjustment_value: number | null;
   bm_ids: string[];
   is_active: boolean;
 }
@@ -33,20 +43,17 @@ const SCOPE_LABEL: Record<Scope, string> = {
   ad: "Anúncio",
 };
 
-const ACTION_LABEL: Record<Action, string> = {
-  pause: "Pausar",
-  activate: "Ativar",
-};
-
 function emptyForm() {
   return {
     name: "",
     scope: "adset" as Scope,
-    action: "pause" as Action,
+    action: "pause" as RuleAction,
     time_window: "today" as "today" | "lifetime",
     bm_ids: [] as string[],
     is_active: true,
     rules: emptyConditionGroup(),
+    budget_adjustment_type: "percentage" as BudgetAdjustmentType,
+    budget_adjustment_value: "",
   };
 }
 
@@ -112,6 +119,8 @@ export default function RulesPanel() {
       bm_ids: rule.bm_ids,
       is_active: rule.is_active,
       rules: rule.rules ?? emptyConditionGroup(),
+      budget_adjustment_type: rule.budget_adjustment_type ?? "percentage",
+      budget_adjustment_value: rule.budget_adjustment_value != null ? String(rule.budget_adjustment_value) : "",
     });
     setMessage(null);
   }
@@ -126,6 +135,10 @@ export default function RulesPanel() {
     const validConditions = form.rules.conditions.filter((c) => c.value.trim() !== "");
     if (validConditions.length === 0) {
       setMessage("Adicione pelo menos uma condição com valor preenchido.");
+      return;
+    }
+    if (isBudgetAction(form.action) && Number(form.budget_adjustment_value) <= 0) {
+      setMessage("Informe um valor de ajuste de orçamento maior que zero.");
       return;
     }
     setBusy(true);
@@ -276,11 +289,14 @@ export default function RulesPanel() {
                 </label>
                 <select
                   value={form.action}
-                  onChange={(e) => setForm({ ...form, action: e.target.value as Action })}
+                  onChange={(e) => setForm({ ...form, action: e.target.value as RuleAction })}
                   className="input w-full"
                 >
-                  <option value="pause">Pausar</option>
-                  <option value="activate">Ativar</option>
+                  {ACTION_OPTIONS.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -297,6 +313,48 @@ export default function RulesPanel() {
                 </select>
               </div>
             </div>
+
+            {isBudgetAction(form.action) && form.scope === "ad" && (
+              <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-soft)] px-3 py-2 text-xs text-[var(--warning)]">
+                Anúncio não tem orçamento próprio na Meta (o orçamento fica na campanha ou no conjunto) — essa
+                regra não vai encontrar nada pra ajustar. Escolha nível Campanha ou Conjunto.
+              </p>
+            )}
+
+            {isBudgetAction(form.action) && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Ajustar em
+                  </label>
+                  <select
+                    value={form.budget_adjustment_type}
+                    onChange={(e) =>
+                      setForm({ ...form, budget_adjustment_type: e.target.value as BudgetAdjustmentType })
+                    }
+                    className="input w-full"
+                  >
+                    <option value="percentage">Porcentagem (%)</option>
+                    <option value="fixed">Valor fixo (R$)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Valor {form.budget_adjustment_type === "percentage" ? "(%)" : "(R$)"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder={form.budget_adjustment_type === "percentage" ? "20" : "50"}
+                    value={form.budget_adjustment_value}
+                    onChange={(e) => setForm({ ...form, budget_adjustment_value: e.target.value })}
+                    className="input w-full"
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -376,7 +434,16 @@ export default function RulesPanel() {
                     {!rule.is_active && <span className="text-xs font-normal text-[var(--text-muted)]">(inativa)</span>}
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">
-                    {ACTION_LABEL[rule.action]} {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
+                    {actionLabel(rule.action)}
+                    {isBudgetAction(rule.action) && rule.budget_adjustment_value != null && (
+                      <>
+                        {" "}
+                        {rule.budget_adjustment_type === "percentage"
+                          ? `${rule.budget_adjustment_value}%`
+                          : `R$ ${rule.budget_adjustment_value.toFixed(2)}`}
+                      </>
+                    )}{" "}
+                    {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
                     {" "}({rule.time_window === "lifetime" ? "acumulado" : "hoje"}) · {bmScopeLabel(rule.bm_ids)}
                   </p>
                 </div>

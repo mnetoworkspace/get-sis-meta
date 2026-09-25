@@ -359,3 +359,32 @@ export async function setObjectStatus(
     access_token: token,
   });
 }
+
+// Orçamento só existe em campanha ou conjunto (anúncio não tem campo de
+// orçamento próprio na Meta) — os dois valores vêm em centavos (unidade
+// mínima da moeda da conta, ex: R$ 10,00 = 1000); só um dos dois vem
+// preenchido por vez, dependendo de qual tipo de orçamento o objeto usa.
+export interface ObjectBudget {
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+}
+
+export async function fetchObjectBudget(objectId: string, token: string): Promise<ObjectBudget> {
+  const json = await graphGet<{ daily_budget?: string; lifetime_budget?: string }>(`/${objectId}`, {
+    fields: "daily_budget,lifetime_budget",
+    access_token: token,
+  });
+  return { daily_budget: json.daily_budget ?? null, lifetime_budget: json.lifetime_budget ?? null };
+}
+
+export async function setObjectBudget(
+  objectId: string,
+  field: "daily_budget" | "lifetime_budget",
+  centsValue: number,
+  token: string,
+): Promise<void> {
+  await graphPost<{ success: boolean }>(`/${objectId}`, {
+    [field]: String(Math.round(centsValue)),
+    access_token: token,
+  });
+}

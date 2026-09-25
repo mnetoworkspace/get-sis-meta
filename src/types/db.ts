@@ -65,8 +65,10 @@ export interface AutomationRule {
   name: string;
   scope: "campaign" | "adset" | "ad";
   time_window: "today" | "lifetime";
-  action: "pause" | "activate";
+  action: import("@/lib/automation/rule-types").RuleAction;
   rules: import("@/lib/automation/rule-types").RuleConditionGroup;
+  budget_adjustment_type: import("@/lib/automation/rule-types").BudgetAdjustmentType | null;
+  budget_adjustment_value: number | null;
   bm_ids: string[];
   is_active: boolean;
   created_at: string;

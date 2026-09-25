@@ -4,6 +4,8 @@ import {
   fetchObjectLifetimeInsights,
   fetchObjectStatus,
   setObjectStatus,
+  fetchObjectBudget,
+  setObjectBudget,
   objectIdFromInsight,
   objectNameFromInsight,
   type ObjectInsight,
@@ -13,11 +15,16 @@ import { pickFtd, pickResult } from "@/lib/results";
 import { fetchExchangeRate } from "@/lib/fx";
 import { sendPushToAll } from "@/lib/push/send";
 import { todayISO } from "@/lib/format";
-import { evaluateGroup, type RuleMetrics } from "@/lib/automation/rule-types";
+import { evaluateGroup, isBudgetAction, type RuleMetrics } from "@/lib/automation/rule-types";
 import type { AdAccount, AutomationRule, MetaCredential } from "@/types/db";
 
 const PAUSED_STATUSES = new Set(["PAUSED", "ARCHIVED", "DELETED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"]);
 const ACTIVE_STATUSES = new Set(["ACTIVE"]);
+
+// Nunca deixa um ajuste automático de orçamento derrubar o valor abaixo
+// disso (R$ 5,00, em centavos) — trava de segurança contra regra mal
+// configurada zerar o orçamento sem querer.
+const MIN_BUDGET_CENTS = 500;
 
 const SCOPE_LABEL: Record<RuleScope, string> = {
   campaign: "Campanha",
@@ -27,6 +34,34 @@ const SCOPE_LABEL: Record<RuleScope, string> = {
 
 function isUniqueViolation(err: { code?: string } | null): boolean {
   return err?.code === "23505";
+}
+
+// Retorna a descrição do que mudou (pra notificação), ou null se não havia
+// orçamento próprio nesse nível pra ajustar (ex: conjunto sob uma campanha
+// com orçamento otimizado no nível da campanha — CBO — não tem budget
+// próprio) ou se o cálculo não fecha.
+async function applyBudgetAdjustment(rule: AutomationRule, objectId: string, token: string): Promise<string | null> {
+  const budget = await fetchObjectBudget(objectId, token);
+  const field = budget.daily_budget != null ? "daily_budget" : budget.lifetime_budget != null ? "lifetime_budget" : null;
+  if (!field) return null;
+
+  const currentCents = Number(field === "daily_budget" ? budget.daily_budget : budget.lifetime_budget);
+  if (!Number.isFinite(currentCents) || currentCents <= 0) return null;
+
+  const adjustmentValue = rule.budget_adjustment_value ?? 0;
+  if (adjustmentValue <= 0) return null;
+
+  const deltaCents =
+    rule.budget_adjustment_type === "percentage" ? currentCents * (adjustmentValue / 100) : adjustmentValue * 100;
+
+  const rawNewCents = rule.action === "increase_budget" ? currentCents + deltaCents : currentCents - deltaCents;
+  const newCents = Math.max(MIN_BUDGET_CENTS, Math.round(rawNewCents));
+  if (newCents === currentCents) return null;
+
+  await setObjectBudget(objectId, field, newCents, token);
+
+  const fieldLabel = field === "daily_budget" ? "diário" : "vitalício";
+  return `Orçamento ${fieldLabel} de R$ ${(currentCents / 100).toFixed(2)} para R$ ${(newCents / 100).toFixed(2)}.`;
 }
 
 // Cache simples por execução — evita pedir a mesma cotação de câmbio várias
@@ -92,16 +127,18 @@ async function evaluateRule(
     const dedupeSuffix = rule.time_window === "lifetime" ? "lifetime" : todayISO();
     const dedupeKey = `RULE_${rule.action.toUpperCase()}:${rule.id}:${objectId}:${dedupeSuffix}`;
 
-    // Registra a tentativa ANTES de checar o status atual, pra nunca
-    // reavaliar o mesmo objeto duas vezes no mesmo dia — economiza chamada
-    // de API e evita notificação repetida.
+    // Registra a tentativa ANTES de agir, pra nunca reavaliar o mesmo objeto
+    // duas vezes no mesmo dia — economiza chamada de API e evita ação/
+    // notificação repetida (crítico pra orçamento: sem isso, cada checagem
+    // de 5 min aumentaria/diminuiria de novo).
     const { error: insertError } = await supabase.from("notifications").insert({
-      type: rule.action === "pause" ? "rule_paused" : "rule_activated",
-      title: `${SCOPE_LABEL[rule.scope]} ${rule.action === "pause" ? "pausado" : "ativado"}: ${objectName}`,
+      type: `rule_${rule.action}`,
+      title: `${SCOPE_LABEL[rule.scope]} · ${objectName}`,
       body: `Regra "${rule.name}".`,
       metadata: {
         rule_id: rule.id,
         scope: rule.scope,
+        action: rule.action,
         object_id: objectId,
         object_name: objectName,
         campaign_id: row.campaign_id,
@@ -119,18 +156,32 @@ async function evaluateRule(
     }
 
     try {
-      const status = await fetchObjectStatus(objectId, token);
-      const alreadyDone = rule.action === "pause" ? PAUSED_STATUSES.has(status) : ACTIVE_STATUSES.has(status);
-      if (alreadyDone) continue;
-      // Não reativa algo apagado/arquivado — só o que está genuinamente pausado.
-      if (rule.action === "activate" && (status === "DELETED" || status === "ARCHIVED")) continue;
+      let description: string;
 
-      await setObjectStatus(objectId, rule.action === "pause" ? "PAUSED" : "ACTIVE", token);
+      if (isBudgetAction(rule.action)) {
+        const result = await applyBudgetAdjustment(rule, objectId, token);
+        // Sem orçamento próprio nesse nível (ex: conjunto sob campanha com
+        // orçamento otimizado) ou delta zerado — nada a fazer.
+        if (!result) continue;
+        description = result;
+      } else {
+        const status = await fetchObjectStatus(objectId, token);
+        const alreadyDone = rule.action === "pause" ? PAUSED_STATUSES.has(status) : ACTIVE_STATUSES.has(status);
+        if (alreadyDone) continue;
+        // Não reativa algo apagado/arquivado — só o que está genuinamente pausado.
+        if (rule.action === "activate" && (status === "DELETED" || status === "ARCHIVED")) continue;
+
+        await setObjectStatus(objectId, rule.action === "pause" ? "PAUSED" : "ACTIVE", token);
+        description = rule.action === "pause" ? "Pausado." : "Ativado.";
+      }
+
       actioned += 1;
 
+      const emoji =
+        rule.action === "pause" ? "⏸️" : rule.action === "activate" ? "▶️" : rule.action === "increase_budget" ? "📈" : "📉";
       await sendPushToAll({
-        title: rule.action === "pause" ? "⏸️ Pausado automaticamente" : "▶️ Ativado automaticamente",
-        body: `${SCOPE_LABEL[rule.scope]} "${objectName}" — regra "${rule.name}".`,
+        title: `${emoji} Regra aplicada automaticamente`,
+        body: `${SCOPE_LABEL[rule.scope]} "${objectName}" — "${rule.name}". ${description}`,
         url: "/",
       });
     } catch (err) {

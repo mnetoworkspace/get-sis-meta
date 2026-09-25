@@ -35,6 +35,24 @@ export const OPERATOR_OPTIONS: { value: RuleOperator; label: string }[] = [
   { value: "eq", label: "= igual a" },
 ];
 
+export type RuleAction = "pause" | "activate" | "increase_budget" | "decrease_budget";
+export type BudgetAdjustmentType = "fixed" | "percentage";
+
+export const ACTION_OPTIONS: { value: RuleAction; label: string }[] = [
+  { value: "pause", label: "Pausar" },
+  { value: "activate", label: "Ativar" },
+  { value: "increase_budget", label: "Aumentar orçamento" },
+  { value: "decrease_budget", label: "Diminuir orçamento" },
+];
+
+export function actionLabel(action: RuleAction): string {
+  return ACTION_OPTIONS.find((a) => a.value === action)?.label ?? action;
+}
+
+export function isBudgetAction(action: RuleAction): boolean {
+  return action === "increase_budget" || action === "decrease_budget";
+}
+
 export function fieldLabel(field: RuleField): string {
   return FIELD_OPTIONS.find((f) => f.value === field)?.label ?? field;
 }

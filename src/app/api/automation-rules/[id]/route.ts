@@ -4,17 +4,35 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const SCOPES = new Set(["campaign", "adset", "ad"]);
-const ACTIONS = new Set(["pause", "activate"]);
+const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget"]);
+const BUDGET_ACTIONS = new Set(["increase_budget", "decrease_budget"]);
+const BUDGET_TYPES = new Set(["fixed", "percentage"]);
 
 export async function PATCH(request: Request, { params }: RouteContext<"/api/automation-rules/[id]">) {
   const { id } = await params;
   const body = await request.json();
-  const { name, scope, action, time_window, bm_ids, is_active, rules } = body;
+  const { name, scope, action, time_window, bm_ids, is_active, rules, budget_adjustment_type, budget_adjustment_value } =
+    body;
 
   const update: Record<string, unknown> = {};
   if (name !== undefined) update.name = name;
   if (scope !== undefined && SCOPES.has(scope)) update.scope = scope;
-  if (action !== undefined && ACTIONS.has(action)) update.action = action;
+  if (action !== undefined && ACTIONS.has(action)) {
+    update.action = action;
+    if (BUDGET_ACTIONS.has(action)) {
+      if (!BUDGET_TYPES.has(budget_adjustment_type) || Number(budget_adjustment_value) <= 0) {
+        return NextResponse.json(
+          { error: "informe o tipo (R$ ou %) e um valor de ajuste de orçamento maior que zero" },
+          { status: 400 },
+        );
+      }
+      update.budget_adjustment_type = budget_adjustment_type;
+      update.budget_adjustment_value = Number(budget_adjustment_value);
+    } else {
+      update.budget_adjustment_type = null;
+      update.budget_adjustment_value = null;
+    }
+  }
   if (time_window !== undefined) update.time_window = time_window === "lifetime" ? "lifetime" : "today";
   if (bm_ids !== undefined) update.bm_ids = Array.isArray(bm_ids) ? bm_ids : [];
   if (is_active !== undefined) update.is_active = Boolean(is_active);
