@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, Pencil, Trash2, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, Pencil, PlayCircle, Trash2, X, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 
@@ -35,6 +35,31 @@ export default function RulesPanel() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function runCheckNow() {
+    setChecking(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/automation-rules/run", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      const { rulesEvaluated, accountsChecked, adSetsPaused, errors } = json as {
+        rulesEvaluated: number;
+        accountsChecked: number;
+        adSetsPaused: number;
+        errors: string[];
+      };
+      setMessage(
+        `Checagem concluída: ${rulesEvaluated} regra(s), ${accountsChecked} conta(s), ${adSetsPaused} conjunto(s) pausado(s)` +
+          (errors.length > 0 ? ` — ${errors.length} erro(s): ${errors[0]}` : "."),
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function loadAll() {
     const [rulesRes, bmsRes] = await Promise.all([fetch("/api/automation-rules"), fetch("/api/bms")]);
@@ -161,11 +186,21 @@ export default function RulesPanel() {
       <main className="page-shell max-w-3xl px-4 py-6 sm:px-6 space-y-6">
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
-        <div className="soft-panel px-4 py-3 text-xs text-[var(--text-muted)]">
-          Por enquanto só existe um tipo de regra: um conjunto de anúncio gasta um valor em R$ sem
-          gerar nenhum FTD no período escolhido → o sistema pausa o conjunto automaticamente e avisa
-          por notificação. A checagem roda no mesmo ciclo automático do sistema (a cada 5 minutos por
-          padrão).
+        <div className="flex flex-col gap-3 soft-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-[var(--text-muted)]">
+            Por enquanto só existe um tipo de regra: um conjunto de anúncio gasta um valor em R$ sem
+            gerar nenhum FTD no período escolhido → o sistema pausa o conjunto automaticamente e avisa
+            por notificação. A checagem roda sozinha no ciclo automático do sistema (a cada 5 minutos
+            por padrão), mas dá pra forçar uma checagem na hora sem esperar.
+          </p>
+          <button
+            onClick={runCheckNow}
+            disabled={checking}
+            className="btn-secondary flex shrink-0 items-center justify-center gap-1.5 py-1.5 px-3 text-xs"
+          >
+            <PlayCircle size={13} className={checking ? "animate-spin" : ""} />
+            {checking ? "Checando..." : "Checar agora"}
+          </button>
         </div>
 
         <section className="card p-5">

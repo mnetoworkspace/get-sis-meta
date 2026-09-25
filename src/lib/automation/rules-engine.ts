@@ -36,8 +36,9 @@ async function evaluateRule(
   rule: AutomationRule,
   account: AdAccount,
   token: string,
-): Promise<void> {
+): Promise<number> {
   const supabase = createSupabaseAdminClient();
+  let paused = 0;
 
   let rows: AdSetDailyInsight[];
   if (rule.time_window === "lifetime") {
@@ -93,6 +94,7 @@ async function evaluateRule(
       if (PAUSED_STATUSES.has(status)) continue;
 
       await pauseAdSet(row.adset_id, token);
+      paused += 1;
 
       await sendPushToAll({
         title: "⏸️ Conjunto pausado automaticamente",
@@ -103,9 +105,23 @@ async function evaluateRule(
       console.error(`[rules-engine] falha ao pausar adset ${row.adset_id}:`, err);
     }
   }
+
+  return paused;
 }
 
-export async function runAutomationRules(): Promise<void> {
+export interface RulesRunSummary {
+  rulesEvaluated: number;
+  accountsChecked: number;
+  adSetsPaused: number;
+  errors: string[];
+}
+
+// Executado pelo agendador automático (instrumentation.ts, a cada N minutos)
+// e também sob demanda pelo botão "Checar agora" da tela de Regras
+// (POST /api/automation-rules/run) — mesma lógica nos dois casos, só muda
+// quem chama.
+export async function runAutomationRules(): Promise<RulesRunSummary> {
+  const summary: RulesRunSummary = { rulesEvaluated: 0, accountsChecked: 0, adSetsPaused: 0, errors: [] };
   const supabase = createSupabaseAdminClient();
 
   const { data: rules, error: rulesError } = await supabase
@@ -116,9 +132,10 @@ export async function runAutomationRules(): Promise<void> {
 
   if (rulesError) {
     console.error("[rules-engine] falha ao carregar regras:", rulesError);
-    return;
+    summary.errors.push(`Falha ao carregar regras: ${rulesError.message}`);
+    return summary;
   }
-  if (!rules || rules.length === 0) return;
+  if (!rules || rules.length === 0) return summary;
 
   const { data: credentials, error: credError } = await supabase
     .from("meta_credentials")
@@ -127,10 +144,12 @@ export async function runAutomationRules(): Promise<void> {
 
   if (credError || !credentials) {
     console.error("[rules-engine] falha ao carregar credenciais:", credError);
-    return;
+    summary.errors.push(`Falha ao carregar credenciais: ${credError?.message ?? "desconhecida"}`);
+    return summary;
   }
 
   for (const rule of rules) {
+    summary.rulesEvaluated += 1;
     const targetCredentials =
       rule.bm_ids.length > 0 ? credentials.filter((c) => rule.bm_ids.includes(c.bm_id)) : credentials;
 
@@ -144,16 +163,22 @@ export async function runAutomationRules(): Promise<void> {
 
       if (accError || !accounts) {
         console.error(`[rules-engine] falha ao carregar contas do BM ${credential.bm_id}:`, accError);
+        summary.errors.push(`BM ${credential.bm_id}: ${accError?.message ?? "falha ao carregar contas"}`);
         continue;
       }
 
       for (const account of accounts) {
+        summary.accountsChecked += 1;
         try {
-          await evaluateRule(rule, account, credential.system_user_token);
+          summary.adSetsPaused += await evaluateRule(rule, account, credential.system_user_token);
         } catch (err) {
+          const message = err instanceof Error ? err.message : "erro desconhecido";
           console.error(`[rules-engine] falha ao avaliar regra ${rule.id} na conta ${account.id}:`, err);
+          summary.errors.push(`Conta ${account.id} (regra "${rule.name}"): ${message}`);
         }
       }
     }
   }
+
+  return summary;
 }
