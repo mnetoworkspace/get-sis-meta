@@ -208,7 +208,7 @@ export default function AdminPanel() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
-        <div className="page-shell max-w-3xl flex items-center justify-between px-6 py-4">
+        <div className="page-shell max-w-3xl flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
             <h1 className="text-lg font-semibold text-[var(--text)]">Gerenciar BMs e contas</h1>
@@ -216,14 +216,14 @@ export default function AdminPanel() {
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
               <ArrowLeft size={14} />
-              Voltar ao dashboard
+              <span className="hidden sm:inline">Voltar ao dashboard</span>
             </Link>
             <LogoutButton />
           </div>
         </div>
       </header>
 
-      <main className="page-shell max-w-3xl px-6 py-6 space-y-6">
+      <main className="page-shell max-w-3xl px-4 py-6 sm:px-6 space-y-6">
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
         <section className="card p-5">
@@ -240,7 +240,7 @@ export default function AdminPanel() {
               </button>
             )}
           </h2>
-          <form onSubmit={submitBm} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submitBm} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input
               placeholder="BM ID"
               value={bmForm.id}
@@ -294,16 +294,16 @@ export default function AdminPanel() {
             {bms.map((bm) => (
               <li
                 key={bm.id}
-                className="flex items-center justify-between soft-panel px-3 py-2.5 text-sm"
+                className="flex flex-col gap-2 soft-panel px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium text-[var(--text)]">{bm.name}</p>
-                  <p className="text-xs text-[var(--text-muted)]">
+                  <p className="text-xs text-[var(--text-muted)] break-all">
                     {bm.id} · {bm.meta_credentials ? "token configurado" : "sem token"} ·{" "}
                     {bm.ad_accounts.length} conta(s)
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     onClick={() => importAccounts(bm.id)}
                     disabled={busy}
@@ -351,7 +351,7 @@ export default function AdminPanel() {
               </button>
             )}
           </h2>
-          <form onSubmit={submitAccount} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submitAccount} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input
               placeholder="Ad Account ID (act_123... ou só o número)"
               value={accountForm.id}
@@ -396,31 +396,34 @@ export default function AdminPanel() {
           <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">Contas de anúncio cadastradas</h2>
           <ul className="space-y-1.5">
             {adAccounts.map((acc) => (
-              <li key={acc.id} className="flex items-center justify-between text-sm">
-                <span className="text-[var(--text)]">{acc.name}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-[var(--text-muted)]">
+              <li
+                key={acc.id}
+                className="flex flex-col gap-1.5 border-b border-[var(--border)] pb-2 text-sm last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:border-0 sm:pb-0"
+              >
+                <div className="flex flex-1 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 sm:justify-start">
+                  <span className="text-[var(--text)]">{acc.name}</span>
+                  <span className="text-xs text-[var(--text-muted)] break-all sm:text-sm">
                     {acc.id} · {acc.business_managers?.name || acc.bm_id} · {acc.currency || "-"} ·{" "}
                     {acc.funding_source || "sem cartão"}
                   </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => editAccount(acc)}
-                      disabled={busy}
-                      title="Editar"
-                      className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs"
-                    >
-                      <Pencil size={11} />
-                    </button>
-                    <button
-                      onClick={() => deleteAccount(acc)}
-                      disabled={busy}
-                      title="Remover"
-                      className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
+                </div>
+                <div className="flex items-center gap-1 self-end sm:self-auto">
+                  <button
+                    onClick={() => editAccount(acc)}
+                    disabled={busy}
+                    title="Editar"
+                    className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    onClick={() => deleteAccount(acc)}
+                    disabled={busy}
+                    title="Remover"
+                    className="btn-secondary flex items-center gap-1 py-1 px-2 text-xs text-red-400 hover:text-red-300"
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
               </li>
             ))}

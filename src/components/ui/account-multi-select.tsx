@@ -25,7 +25,8 @@ export function AccountMultiSelect({ accounts, selected, onChange }: Props) {
   function openPanel() {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setPos({ top: rect.bottom + 8, left: Math.max(8, rect.left) });
+    const left = Math.min(rect.left, window.innerWidth - 296);
+    setPos({ top: rect.bottom + 8, left: Math.max(8, left) });
     setOpen(true);
   }
 

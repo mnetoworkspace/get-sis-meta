@@ -39,10 +39,10 @@ interface SyncLog {
   error_message: string | null;
 }
 
-const TABS: { key: Tab; label: string }[] = [
+const TABS: { key: Tab; label: string; shortLabel?: string }[] = [
   { key: "bm", label: "Por BM" },
   { key: "account", label: "Por Conta" },
-  { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)" },
+  { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)", shortLabel: "Detalhado" },
   { key: "traffic", label: "Tráfego" },
   { key: "deposits", label: "Depósitos" },
 ];
@@ -213,12 +213,12 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
-        <div className="page-shell flex items-center justify-between px-6 py-4">
+        <div className="page-shell flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
             <div>
               <h1 className="text-lg font-semibold text-[var(--text)]">Traffic RakeBet</h1>
-              <p className="text-xs text-[var(--text-muted)]">
+              <p className="hidden text-xs text-[var(--text-muted)] sm:block">
                 Gastos consolidados por BM / conta de anúncio
               </p>
             </div>
@@ -226,7 +226,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
               <Settings size={14} />
-              Gerenciar BMs e contas
+              <span className="hidden sm:inline">Gerenciar BMs e contas</span>
             </Link>
             <PushNotificationToggle />
             <LogoutButton />
@@ -234,7 +234,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="page-shell px-6 py-6">
+      <main className="page-shell px-4 py-6 sm:px-6">
         <div className="mb-6 flex flex-wrap items-center gap-3 card p-4">
           <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
 
@@ -251,13 +251,13 @@ export default function Dashboard() {
             <AccountMultiSelect accounts={accounts} selected={accountFilters} onChange={setAccountFilters} />
           ) : null}
 
-          <div className="ml-auto flex flex-col items-end gap-1">
-            <button onClick={handleSync} disabled={syncing} className="btn-primary flex items-center gap-2">
+          <div className="flex w-full flex-col items-end gap-1 sm:ml-auto sm:w-auto">
+            <button onClick={handleSync} disabled={syncing} className="btn-primary flex w-full items-center justify-center gap-2 sm:w-auto">
               <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
               {syncing ? "Sincronizando..." : "Sincronizar agora"}
             </button>
             {lastSync && (
-              <span className="text-xs text-[var(--text-muted)]">
+              <span className="text-right text-xs text-[var(--text-muted)]">
                 Última sync: {new Date(lastSync.started_at).toLocaleString("pt-BR")} ({lastSync.status})
               </span>
             )}
@@ -277,18 +277,25 @@ export default function Dashboard() {
           />
         )}
 
-        <div className="mb-4 flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 w-fit">
+        <div className="mb-4 flex w-fit max-w-full flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
+              className={`whitespace-nowrap rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${
                 tab === t.key
                   ? "bg-gradient-to-br from-[var(--accent-2)] to-[var(--accent)] text-white shadow"
                   : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              {t.label}
+              {t.shortLabel ? (
+                <>
+                  <span className="sm:hidden">{t.shortLabel}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
+                </>
+              ) : (
+                t.label
+              )}
             </button>
           ))}
         </div>
