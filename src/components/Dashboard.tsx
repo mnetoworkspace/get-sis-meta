@@ -15,7 +15,7 @@ import { DepositsTab } from "@/components/tables/DepositsTab";
 import { AccountMultiSelect } from "@/components/ui/account-multi-select";
 import { PushNotificationToggle } from "@/components/push/push-notification-toggle";
 
-type Tab = "bm" | "account" | "detailed" | "traffic" | "deposits";
+type Tab = "bm" | "account" | "detailed" | "traffic";
 
 interface AdAccountOption {
   id: string;
@@ -43,8 +43,7 @@ const TABS: { key: Tab; label: string; shortLabel?: string }[] = [
   { key: "bm", label: "Por BM" },
   { key: "account", label: "Por Conta" },
   { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)", shortLabel: "Detalhado" },
-  { key: "traffic", label: "Tráfego" },
-  { key: "deposits", label: "Depósitos" },
+  { key: "traffic", label: "Tráfego e Depósitos", shortLabel: "Tráfego" },
 ];
 
 function aggregateTotals(rows: SpendRow[]): PeriodTotals {
@@ -117,7 +116,7 @@ export default function Dashboard() {
   }, []);
 
   const loadData = useCallback(async () => {
-    if (tab === "traffic" || tab === "deposits") return;
+    if (tab === "traffic") return;
     setLoading(true);
     try {
       if (tab === "detailed") {
@@ -299,7 +298,7 @@ export default function Dashboard() {
                 </option>
               ))}
             </select>
-          ) : tab !== "traffic" && tab !== "deposits" ? (
+          ) : tab !== "traffic" ? (
             <AccountMultiSelect accounts={accounts} selected={accountFilters} onChange={setAccountFilters} />
           ) : null}
 
@@ -357,9 +356,20 @@ export default function Dashboard() {
             porque o efeito que carrega do localStorage não chega a assentar
             antes do remount seguinte. */}
         {tab === "traffic" ? (
-          <TrafficTab since={since} until={until} />
-        ) : tab === "deposits" ? (
-          <DepositsTab since={since} until={until} />
+          <div className="space-y-8">
+            <div>
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Tráfego
+              </h2>
+              <TrafficTab since={since} until={until} />
+            </div>
+            <div>
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Depósitos
+              </h2>
+              <DepositsTab since={since} until={until} />
+            </div>
+          </div>
         ) : (
           <div className={loading ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
             {tab === "bm" ? (
