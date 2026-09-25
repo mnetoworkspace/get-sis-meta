@@ -9,7 +9,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Variáveis de build (não secretas) — as secretas são injetadas em runtime.
+# Variáveis de build (não secretas) — as secretas server-only (tokens, chaves
+# privadas) são injetadas só em runtime, mas qualquer NEXT_PUBLIC_* precisa
+# existir AQUI: o Next grava o valor dentro do bundle JS do client durante o
+# build, não lê process.env de novo quando o container sobe depois.
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

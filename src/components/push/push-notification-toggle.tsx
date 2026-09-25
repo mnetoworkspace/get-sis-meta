@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Loader2 } from "lucide-react";
 import { urlBase64ToUint8Array } from "@/lib/push/client";
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+// Chave VAPID pública — por definição não é secreta (é enviada pro navegador
+// de todo mundo que ativa notificação; só a VAPID_PRIVATE_KEY é sensível).
+// Fallback fixo aqui pra não depender de a plataforma de deploy propagar
+// variáveis NEXT_PUBLIC_* pro build da imagem Docker — se a env var existir
+// no ambiente de build, ela tem prioridade; senão cai nesse valor.
+const VAPID_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  "BIBj5uyKHhvrZs9FdSN34Gozzh02mezr1UK3HuzIes4SWk1ObDBmluxNYxXvo9wWx4k4kAL_QT2HyhwdcYie4uQ";
 
 async function subscribeAction(sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
   const res = await fetch("/api/push/subscribe", {
