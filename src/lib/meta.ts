@@ -131,6 +131,23 @@ export async function fetchClientAdAccounts(
   });
 }
 
+export type BusinessStatusCheck = { ok: true } | { ok: false; message: string };
+
+// A Meta não expõe um campo "status" simples pra Business Manager (como
+// account_status nas contas) — uma BM bloqueada geralmente derruba as
+// chamadas feitas com o token dela. Em vez de tentar adivinhar a causa,
+// só reporta se a chamada foi bem ou mal, e guarda a mensagem crua da Meta
+// pra pessoa julgar o motivo real.
+export async function fetchBusinessStatus(bmId: string, token: string): Promise<BusinessStatusCheck> {
+  try {
+    await graphGet(`/${bmId}`, { fields: "id,name", access_token: token });
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof MetaApiError ? err.message : err instanceof Error ? err.message : "Erro desconhecido";
+    return { ok: false, message };
+  }
+}
+
 export const ACCOUNT_STATUS_MAP: Record<number, string> = {
   1: "ACTIVE",
   2: "DISABLED",

@@ -3,6 +3,9 @@ export interface BusinessManager {
   name: string;
   is_active: boolean;
   created_at: string;
+  meta_status: string | null; // "ACTIVE" | "ERROR" | null (nunca checado)
+  meta_status_detail: string | null; // mensagem crua da Meta quando meta_status é "ERROR"
+  status_checked_at: string | null;
 }
 
 export interface AdAccount {

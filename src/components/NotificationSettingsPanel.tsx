@@ -46,8 +46,9 @@ const CATEGORIES: CategoryConfig[] = [
   {
     enabledKey: "account_status_enabled",
     silentKey: "account_status_silent",
-    title: "Status de conta de anúncio",
-    description: "Avisa quando uma conta sai do status ativo (bloqueada, em revisão, fechada) ou volta a ficar ativa.",
+    title: "Status de conta e BM",
+    description:
+      "Avisa quando uma conta sai do status ativo (bloqueada, em revisão, fechada) ou volta a ficar ativa — e quando uma Business Manager inteira para de responder (possível bloqueio da BM).",
   },
 ];
 

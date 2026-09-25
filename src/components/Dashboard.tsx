@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, RefreshCw, Settings, Zap } from "lucide-react";
+import { Activity, Bell, RefreshCw, Settings, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { daysAgoISO, previousPeriod, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
@@ -294,6 +294,13 @@ export default function Dashboard() {
             >
               <Settings size={14} />
               <span className="hidden sm:inline">Gerenciar BMs e contas</span>
+            </Link>
+            <Link
+              href="/status"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] sm:px-3.5"
+            >
+              <Activity size={14} />
+              <span className="hidden sm:inline">Status</span>
             </Link>
             <Link
               href="/notifications"
