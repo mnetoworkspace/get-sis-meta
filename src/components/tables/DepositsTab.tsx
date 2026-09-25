@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LineTrendChart } from "@/components/charts/LineTrendChart";
 import { HourBarChart } from "@/components/charts/HourBarChart";
+import { PaymentMethodsSection } from "@/components/tables/PaymentMethodsSection";
 import { formatCurrency, formatNumber } from "@/lib/format";
 
 interface Props {
@@ -174,6 +175,8 @@ export function DepositsTab({ since, until }: Props) {
       {currencies.length === 0 && summary.length > 0 && (
         <p className="text-sm text-[var(--text-muted)]">Sem dados suficientes para os gráficos ainda.</p>
       )}
+
+      {summary.length > 0 && <PaymentMethodsSection since={since} until={until} />}
     </div>
   );
 }
