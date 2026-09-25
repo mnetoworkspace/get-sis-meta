@@ -23,13 +23,26 @@ export function formatAxisNumber(value: number) {
   return String(value);
 }
 
+// O painel opera em horário de Bogotá (UTC-5, sem horário de verão) — mesmo
+// fuso já usado pros depósitos (ver BOGOTA_OFFSET em lib/payments.ts) e o
+// fuso configurado nas contas de anúncio da Meta. "Hoje"/"N dias atrás"
+// calculado em UTC fica adiantado em relação ao dia real em Bogotá em boa
+// parte do dia (ex: 00:30 UTC já é dia seguinte em UTC, mas ainda é fim de
+// tarde do dia anterior em Bogotá) — faz o filtro "Hoje" pedir uma data que
+// ainda não tem gasto sincronizado, parecendo que não tem dado nenhum.
+function nowInBogota(): Date {
+  const d = new Date();
+  d.setUTCHours(d.getUTCHours() - 5);
+  return d;
+}
+
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return nowInBogota().toISOString().slice(0, 10);
 }
 
 export function daysAgoISO(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
+  const d = nowInBogota();
+  d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
 }
 
