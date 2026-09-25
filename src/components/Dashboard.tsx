@@ -359,15 +359,15 @@ export default function Dashboard() {
           <div className="space-y-8">
             <div>
               <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                Tráfego
-              </h2>
-              <TrafficTab since={since} until={until} />
-            </div>
-            <div>
-              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Depósitos
               </h2>
               <DepositsTab since={since} until={until} />
+            </div>
+            <div>
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Tráfego
+              </h2>
+              <TrafficTab since={since} until={until} />
             </div>
           </div>
         ) : (
