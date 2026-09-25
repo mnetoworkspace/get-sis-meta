@@ -93,6 +93,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncHadErrors, setSyncHadErrors] = useState(false);
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
   const [compare, setCompare] = useState<{ current: PeriodTotals; previous: PeriodTotals; currency: string | null } | null>(
     null,
@@ -227,6 +228,7 @@ export default function Dashboard() {
   async function handleSync() {
     setSyncing(true);
     setSyncMessage(null);
+    setSyncHadErrors(false);
     try {
       const res = await fetch("/api/sync", {
         method: "POST",
@@ -236,16 +238,30 @@ export default function Dashboard() {
       const json = await res.json();
       if (!res.ok) {
         setSyncMessage(`Erro: ${json.error || "falha desconhecida"}`);
+        setSyncHadErrors(true);
       } else {
-        setSyncMessage(
-          `Sincronizado: ${json.accounts_synced} conta(s) ok, ${json.accounts_failed} falha(s).`,
-        );
+        const errs: { ad_account_id: string; message: string }[] = json.errors || [];
+        setSyncHadErrors(errs.length > 0);
+        let msg = `Sincronizado: ${json.accounts_synced} conta(s) ok, ${json.accounts_failed} falha(s).`;
+        if (errs.length > 0) {
+          // Agrupa mensagens repetidas (ex: mesma coluna faltando no banco
+          // falhando em 8 contas de uma vez) em vez de listar 8x a mesma
+          // linha — mostra a causa, não o ruído.
+          const grouped = new Map<string, number>();
+          for (const e of errs) grouped.set(e.message, (grouped.get(e.message) || 0) + 1);
+          const details = Array.from(grouped.entries())
+            .map(([message, count]) => `${message}${count > 1 ? ` (${count}x)` : ""}`)
+            .join(" · ");
+          msg += ` ${details}`;
+        }
+        setSyncMessage(msg);
         await loadData();
         await loadCompare();
         await loadLastSync();
       }
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Erro desconhecido");
+      setSyncHadErrors(true);
     } finally {
       setSyncing(false);
     }
@@ -316,7 +332,15 @@ export default function Dashboard() {
         </div>
 
         {syncMessage && (
-          <div className="mb-4 soft-panel px-4 py-2 text-sm text-[var(--text)]">{syncMessage}</div>
+          <div
+            className={`mb-4 px-4 py-2 text-sm ${
+              syncHadErrors
+                ? "rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger-soft)] text-[var(--danger)]"
+                : "soft-panel text-[var(--text)]"
+            }`}
+          >
+            {syncMessage}
+          </div>
         )}
 
         {compare && (
