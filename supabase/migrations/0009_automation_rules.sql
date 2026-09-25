@@ -11,7 +11,7 @@ create table if not exists automation_rules (
   metric text not null default 'spend', -- 'spend' (futuro: 'cost_per_result', etc.)
   threshold numeric(14, 2) not null,
   condition text not null default 'no_ftd', -- 'no_ftd' (futuro: outras condições)
-  window text not null default 'today', -- 'today' | 'lifetime'
+  time_window text not null default 'today', -- 'today' | 'lifetime' ("window" é palavra reservada no Postgres)
   action text not null default 'pause', -- 'pause' (futuro: 'notify_only', 'activate')
   bm_ids text[] not null default '{}', -- vazio = aplica a todos os BMs
   is_active boolean not null default true,

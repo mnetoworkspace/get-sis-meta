@@ -40,7 +40,7 @@ async function evaluateRule(
   const supabase = createSupabaseAdminClient();
 
   let rows: AdSetDailyInsight[];
-  if (rule.window === "lifetime") {
+  if (rule.time_window === "lifetime") {
     rows = await fetchAdSetLifetimeInsights(account.id, token);
   } else {
     const today = todayISO();
@@ -58,7 +58,7 @@ async function evaluateRule(
     const spendBrl = await convertToBrl(spend, account.currency);
     if (spendBrl == null || spendBrl < rule.threshold) continue;
 
-    const dedupeSuffix = rule.window === "lifetime" ? "lifetime" : todayISO();
+    const dedupeSuffix = rule.time_window === "lifetime" ? "lifetime" : todayISO();
     const dedupeKey = `RULE_PAUSE:${rule.id}:${row.adset_id}:${dedupeSuffix}`;
 
     // Registra a tentativa ANTES de checar o status atual, pra nunca reavaliar

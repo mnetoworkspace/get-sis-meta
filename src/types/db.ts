@@ -67,7 +67,7 @@ export interface AutomationRule {
   metric: "spend";
   threshold: number;
   condition: "no_ftd";
-  window: "today" | "lifetime";
+  time_window: "today" | "lifetime";
   action: "pause";
   bm_ids: string[];
   is_active: boolean;

@@ -15,7 +15,7 @@ interface RuleRow {
   id: string;
   name: string;
   threshold: number;
-  window: "today" | "lifetime";
+  time_window: "today" | "lifetime";
   bm_ids: string[];
   is_active: boolean;
 }
@@ -23,7 +23,7 @@ interface RuleRow {
 const emptyForm = {
   name: "",
   threshold: "",
-  window: "today" as "today" | "lifetime",
+  time_window: "today" as "today" | "lifetime",
   bm_ids: [] as string[],
   is_active: true,
 };
@@ -60,7 +60,7 @@ export default function RulesPanel() {
     setForm({
       name: rule.name,
       threshold: String(rule.threshold),
-      window: rule.window,
+      time_window: rule.time_window,
       bm_ids: rule.bm_ids,
       is_active: rule.is_active,
     });
@@ -209,8 +209,8 @@ export default function RulesPanel() {
                   Janela
                 </label>
                 <select
-                  value={form.window}
-                  onChange={(e) => setForm({ ...form, window: e.target.value as "today" | "lifetime" })}
+                  value={form.time_window}
+                  onChange={(e) => setForm({ ...form, time_window: e.target.value as "today" | "lifetime" })}
                   className="input w-full"
                 >
                   <option value="today">Só o gasto de hoje (reseta todo dia)</option>
@@ -290,7 +290,7 @@ export default function RulesPanel() {
                     {!rule.is_active && <span className="text-xs font-normal text-[var(--text-muted)]">(inativa)</span>}
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Gasto ≥ R$ {rule.threshold.toFixed(2)} sem FTD ({rule.window === "lifetime" ? "acumulado" : "hoje"}) ·{" "}
+                    Gasto ≥ R$ {rule.threshold.toFixed(2)} sem FTD ({rule.time_window === "lifetime" ? "acumulado" : "hoje"}) ·{" "}
                     {bmScopeLabel(rule.bm_ids)}
                   </p>
                 </div>
