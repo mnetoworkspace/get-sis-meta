@@ -17,6 +17,9 @@ self.addEventListener("push", (event) => {
     body: data.body || "",
     icon: "/logo-rakebet-icon.png",
     badge: "/logo-rakebet-icon.png",
+    // Web Push não permite som customizado — só silenciosa (true) ou o som
+    // padrão do aparelho (false/omitido).
+    silent: data.silent === true,
     data: { url: data.url || "/" },
   };
 

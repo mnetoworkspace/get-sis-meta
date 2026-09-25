@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase";
 import {
+  ACCOUNT_STATUS_MAP,
   MetaApiError,
   fetchClientAdAccounts,
   fetchOwnedAdAccounts,
@@ -8,19 +9,6 @@ import {
 import type { MetaCredential } from "@/types/db";
 
 export const dynamic = "force-dynamic";
-
-const ACCOUNT_STATUS_MAP: Record<number, string> = {
-  1: "ACTIVE",
-  2: "DISABLED",
-  3: "UNSETTLED",
-  7: "PENDING_RISK_REVIEW",
-  8: "PENDING_SETTLEMENT",
-  9: "IN_GRACE_PERIOD",
-  100: "PENDING_CLOSURE",
-  101: "CLOSED",
-  201: "ANY_ACTIVE",
-  202: "ANY_CLOSED",
-};
 
 export async function POST(request: Request) {
   const body = await request.json();

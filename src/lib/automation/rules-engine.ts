@@ -16,6 +16,7 @@ import { fetchExchangeRate } from "@/lib/fx";
 import { sendPushToAll } from "@/lib/push/send";
 import { todayISO } from "@/lib/format";
 import { evaluateGroup, isBudgetAction, type RuleMetrics } from "@/lib/automation/rule-types";
+import { notificationDecision } from "@/lib/notifications/settings";
 import type { AdAccount, AutomationRule, MetaCredential } from "@/types/db";
 
 const PAUSED_STATUSES = new Set(["PAUSED", "ARCHIVED", "DELETED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"]);
@@ -149,6 +150,7 @@ async function evaluateRule(
 ): Promise<number> {
   const supabase = createSupabaseAdminClient();
   let actioned = 0;
+  const { enabled: pushEnabled, silent } = await notificationDecision("rules");
 
   let rows: ObjectInsight[];
   if (rule.time_window === "lifetime") {
@@ -232,13 +234,16 @@ async function evaluateRule(
 
       actioned += 1;
 
-      const emoji =
-        rule.action === "pause" ? "⏸️" : rule.action === "activate" ? "▶️" : rule.action === "increase_budget" ? "📈" : "📉";
-      await sendPushToAll({
-        title: `${emoji} Regra aplicada automaticamente`,
-        body: `${SCOPE_LABEL[rule.scope]} "${objectName}" — "${rule.name}". ${description}`,
-        url: "/",
-      });
+      if (pushEnabled) {
+        const emoji =
+          rule.action === "pause" ? "⏸️" : rule.action === "activate" ? "▶️" : rule.action === "increase_budget" ? "📈" : "📉";
+        await sendPushToAll({
+          title: `${emoji} Regra aplicada automaticamente`,
+          body: `${SCOPE_LABEL[rule.scope]} "${objectName}" — "${rule.name}". ${description}`,
+          url: "/",
+          silent,
+        });
+      }
     } catch (err) {
       console.error(`[rules-engine] falha ao aplicar ação em ${objectId}:`, err);
     }

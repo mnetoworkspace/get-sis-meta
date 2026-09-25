@@ -20,6 +20,10 @@ interface PushPayload {
   title: string;
   body?: string;
   url?: string;
+  // Web Push não permite escolher um som customizado — só tocar o som
+  // padrão do aparelho (silent: false/omitido) ou não tocar nada
+  // (silent: true). Repassado pro service worker via public/sw.js.
+  silent?: boolean;
 }
 
 // Manda a mesma notificação pra todos os dispositivos inscritos (login único

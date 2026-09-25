@@ -131,6 +131,32 @@ export async function fetchClientAdAccounts(
   });
 }
 
+export const ACCOUNT_STATUS_MAP: Record<number, string> = {
+  1: "ACTIVE",
+  2: "DISABLED",
+  3: "UNSETTLED",
+  7: "PENDING_RISK_REVIEW",
+  8: "PENDING_SETTLEMENT",
+  9: "IN_GRACE_PERIOD",
+  100: "PENDING_CLOSURE",
+  101: "CLOSED",
+  201: "ANY_ACTIVE",
+  202: "ANY_CLOSED",
+};
+
+/**
+ * Status atual (traduzido) de uma única conta de anúncio na Meta — usado
+ * pelo watcher que compara com o status salvo em `ad_accounts` e avisa
+ * quando a conta sai de ACTIVE (ex: desabilitada/bloqueada).
+ */
+export async function fetchAdAccountStatus(adAccountId: string, token: string): Promise<string> {
+  const json = await graphGet<{ account_status: number }>(`/${adAccountId}`, {
+    fields: "account_status",
+    access_token: token,
+  });
+  return ACCOUNT_STATUS_MAP[json.account_status] || String(json.account_status);
+}
+
 /**
  * Cartão/fonte de pagamento vinculada à conta na Meta (ex: "Mastercard *7617").
  * Retorna null se a conta não tiver um funding source configurado.

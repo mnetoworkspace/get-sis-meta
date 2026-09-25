@@ -1,6 +1,7 @@
 import { fetchAllDeposits, type DepositRow } from "@/lib/payments";
 import { createSupabaseAdminClient } from "@/lib/supabase";
 import { sendPushToAll } from "@/lib/push/send";
+import { notificationDecision } from "@/lib/notifications/settings";
 
 const SILENCE_MINUTES = Number(process.env.DEPOSIT_SILENCE_MINUTES || 60);
 // Cobre bem mais que o intervalo de checagem, pra não perder um depósito se
@@ -28,6 +29,7 @@ function isRealDeposit(d: DepositRow): boolean {
 
 async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): Promise<void> {
   const supabase = createSupabaseAdminClient();
+  const { enabled: pushEnabled, silent } = await notificationDecision("deposit");
 
   for (const d of deposits) {
     const { error } = await supabase.from("notifications").insert({
@@ -49,11 +51,13 @@ async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): 
     // só registra o que já existe pra dedupe — não dispara um push por cada
     // depósito das últimas horas de uma vez.
     if (isBootstrap) continue;
+    if (!pushEnabled) continue;
 
     await sendPushToAll({
       title: "💰 Novo depósito",
       body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
       url: "/",
+      silent,
     });
   }
 }
@@ -87,6 +91,8 @@ async function checkSilence(mostRecentKnownDepositAt: string | null): Promise<vo
   const hourBucket = Math.floor(silentMinutes / 60);
   const dedupeKey = `DEPOSIT_SILENCE:${referenceTime.toISOString()}:${hourBucket}h`;
 
+  const { enabled: pushEnabled, silent } = await notificationDecision("deposit_silence");
+
   const { error } = await supabase.from("notifications").insert({
     type: "deposit_silence",
     title: "Sem depósitos há um tempo",
@@ -102,10 +108,13 @@ async function checkSilence(mostRecentKnownDepositAt: string | null): Promise<vo
     return;
   }
 
+  if (!pushEnabled) return;
+
   await sendPushToAll({
     title: "⚠️ Sem depósitos",
     body: `Nenhum depósito há ${silentMinutes} min. Verifique o gateway de pagamento.`,
     url: "/",
+    silent,
   });
 }
 
