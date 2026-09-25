@@ -24,6 +24,7 @@ export function TrafficTab({ since, until }: Props) {
   const [dailyVisits, setDailyVisits] = useState<{ x: string; y: number }[]>([]);
   const [hourlySpend, setHourlySpend] = useState<{ hour: number; value: number }[]>([]);
   const [hourlyVisits, setHourlyVisits] = useState<{ hour: number; value: number }[]>([]);
+  const [hourlyCostPerFtd, setHourlyCostPerFtd] = useState<{ x: string; y: number | null }[]>([]);
   const [currency, setCurrency] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,8 +69,13 @@ export function TrafficTab({ since, until }: Props) {
         interface SpendHourlyRow {
           hour: number;
           spend: number;
+          cost_per_ftd: number | null;
         }
-        setHourlySpend((spendHourly.data || []).map((r: SpendHourlyRow) => ({ hour: r.hour, value: r.spend })));
+        const spendHourlyRows: SpendHourlyRow[] = spendHourly.data || [];
+        setHourlySpend(spendHourlyRows.map((r) => ({ hour: r.hour, value: r.spend })));
+        // null (não 0) nas horas sem FTD — custo/FTD é indefinido ali, não
+        // "grátis"; o gráfico mostra um vazio em vez de um "R$ 0,00" enganoso.
+        setHourlyCostPerFtd(spendHourlyRows.map((r) => ({ x: String(r.hour), y: r.cost_per_ftd })));
 
         interface TrafficHourlyRow {
           hour: number;
@@ -105,7 +111,7 @@ export function TrafficTab({ since, until }: Props) {
           formatX={formatDateShort}
         />
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <HourBarChart
           title="Gasto por hora do dia"
           data={hourlySpend}
@@ -117,6 +123,15 @@ export function TrafficTab({ since, until }: Props) {
           data={hourlyVisits}
           color={PURPLE}
           formatValue={(v) => formatNumber(v)}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-4">
+        <LineTrendChart
+          title="Custo/FTD por hora do dia"
+          data={hourlyCostPerFtd}
+          color={PINK}
+          formatValue={(v) => formatCurrency(v, currency)}
+          formatX={(v) => `${v}h`}
         />
       </div>
     </div>

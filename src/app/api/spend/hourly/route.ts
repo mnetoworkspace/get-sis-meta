@@ -11,6 +11,7 @@ interface HourlyRow {
   impressions: number;
   clicks: number;
   results: number | null;
+  ftd: number | null;
   currency: string | null;
   ad_accounts: { bm_id: string } | null;
 }
@@ -50,6 +51,8 @@ export async function GET(request: Request) {
     clicks: 0,
     results: 0,
     hasResults: false,
+    ftd: 0,
+    hasFtd: false,
   }));
 
   for (const row of rows) {
@@ -62,6 +65,10 @@ export async function GET(request: Request) {
       bucket.results += row.results;
       bucket.hasResults = true;
     }
+    if (row.ftd != null) {
+      bucket.ftd += row.ftd;
+      bucket.hasFtd = true;
+    }
   }
 
   const currency = rows[0]?.currency ?? null;
@@ -73,6 +80,8 @@ export async function GET(request: Request) {
       impressions: b.impressions,
       clicks: b.clicks,
       results: b.hasResults ? b.results : null,
+      ftd: b.hasFtd ? b.ftd : null,
+      cost_per_ftd: b.hasFtd && b.ftd > 0 ? b.spend / b.ftd : null,
     })),
     currency,
   });

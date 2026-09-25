@@ -224,6 +224,7 @@ export async function POST(request: Request) {
             const rows = accountHourly.map((row) => {
               const spend = num(row.spend);
               const { results, costPerResult } = pickResult(row.actions, row.cost_per_action_type, spend);
+              const { ftd, costPerFtd } = pickFtd(row.actions, row.cost_per_action_type, spend);
               return {
                 ad_account_id: account.id,
                 date: row.date_start,
@@ -233,6 +234,8 @@ export async function POST(request: Request) {
                 clicks: num(row.clicks),
                 results,
                 cost_per_result: costPerResult,
+                ftd,
+                cost_per_ftd: costPerFtd,
                 currency: account.currency,
                 synced_at: new Date().toISOString(),
               };

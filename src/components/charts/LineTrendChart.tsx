@@ -5,7 +5,10 @@ import { formatAxisNumber } from "@/lib/format";
 
 interface Point {
   x: string;
-  y: number;
+  // null = sem dado nesse ponto (ex: hora sem nenhum FTD, custo/FTD é
+  // indefinido, não zero) — vira um intervalo em branco no gráfico em vez
+  // de um "R$ 0,00" enganoso.
+  y: number | null;
 }
 
 interface Props {
@@ -24,16 +27,17 @@ function ChartTooltip({
   formatX,
 }: {
   active?: boolean;
-  payload?: { value: number }[];
+  payload?: { value: number | null }[];
   label?: string;
   formatValue: (v: number) => string;
   formatX?: (v: string) => string;
 }) {
   if (!active || !payload || payload.length === 0) return null;
+  const value = payload[0].value;
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-3 py-2 text-xs shadow-lg">
       <p className="mb-0.5 text-[var(--text-muted)]">{formatX && label ? formatX(label) : label}</p>
-      <p className="font-semibold text-[var(--text)]">{formatValue(payload[0].value)}</p>
+      <p className="font-semibold text-[var(--text)]">{value == null ? "Sem dado" : formatValue(value)}</p>
     </div>
   );
 }
