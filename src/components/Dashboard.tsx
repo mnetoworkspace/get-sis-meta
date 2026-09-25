@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { RefreshCw, Settings } from "lucide-react";
+import { RefreshCw, Settings, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { daysAgoISO, previousPeriod, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
@@ -224,6 +224,10 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/rules" className="btn-secondary flex items-center gap-1.5 text-sm">
+              <Zap size={14} />
+              <span className="hidden sm:inline">Regras</span>
+            </Link>
             <Link href="/admin" className="btn-secondary flex items-center gap-1.5 text-sm">
               <Settings size={14} />
               <span className="hidden sm:inline">Gerenciar BMs e contas</span>

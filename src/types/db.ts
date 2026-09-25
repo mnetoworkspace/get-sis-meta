@@ -60,6 +60,21 @@ export interface InsightsAccountDaily {
   synced_at: string;
 }
 
+export interface AutomationRule {
+  id: string;
+  name: string;
+  scope: "adset";
+  metric: "spend";
+  threshold: number;
+  condition: "no_ftd";
+  window: "today" | "lifetime";
+  action: "pause";
+  bm_ids: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InsightsAdDaily {
   id: string;
   ad_account_id: string;

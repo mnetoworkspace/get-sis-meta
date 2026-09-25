@@ -36,6 +36,27 @@ async function graphGet<T>(
   return json as T;
 }
 
+async function graphPost<T>(
+  path: string,
+  params: Record<string, string>,
+): Promise<T> {
+  const url = new URL(`${GRAPH_BASE}${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+
+  const res = await fetch(url.toString(), { method: "POST" });
+  const json = await res.json();
+
+  if (!res.ok) {
+    const message =
+      json?.error?.message || `Erro ao chamar Meta Graph API (${res.status})`;
+    throw new MetaApiError(message, res.status, json);
+  }
+
+  return json as T;
+}
+
 async function graphGetAllPages<T>(
   path: string,
   params: Record<string, string>,
@@ -230,5 +251,79 @@ export async function fetchAdLevelDailyInsights(
     fields: AD_INSIGHT_FIELDS,
     access_token: token,
     limit: "500",
+  });
+}
+
+const ADSET_INSIGHT_FIELDS =
+  "campaign_id,campaign_name,adset_id,adset_name,spend,actions,cost_per_action_type";
+
+export interface AdSetDailyInsight {
+  date_start: string;
+  date_stop: string;
+  campaign_id: string;
+  campaign_name?: string;
+  adset_id: string;
+  adset_name?: string;
+  spend?: string;
+  actions?: MetaAction[];
+  cost_per_action_type?: MetaAction[];
+}
+
+// Usado pelo motor de regras de automação (ver src/lib/automation/rules-engine.ts) —
+// nível "adset" traz só o necessário pra avaliar a condição, bem mais leve que
+// puxar todos os anúncios da conta a cada checagem.
+export async function fetchAdSetDailyInsights(
+  adAccountId: string,
+  token: string,
+  since: string,
+  until: string,
+): Promise<AdSetDailyInsight[]> {
+  return graphGetAllPages<AdSetDailyInsight>(`/${adAccountId}/insights`, {
+    level: "adset",
+    time_increment: "1",
+    time_range: JSON.stringify({ since, until }),
+    fields: ADSET_INSIGHT_FIELDS,
+    access_token: token,
+    limit: "500",
+  });
+}
+
+// Totais acumulados desde sempre (uma linha por adset, sem quebra diária) —
+// usado por regras com window="lifetime".
+export async function fetchAdSetLifetimeInsights(
+  adAccountId: string,
+  token: string,
+): Promise<AdSetDailyInsight[]> {
+  return graphGetAllPages<AdSetDailyInsight>(`/${adAccountId}/insights`, {
+    level: "adset",
+    date_preset: "maximum",
+    fields: ADSET_INSIGHT_FIELDS,
+    access_token: token,
+    limit: "500",
+  });
+}
+
+export type AdSetEffectiveStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "DELETED"
+  | "ARCHIVED"
+  | "CAMPAIGN_PAUSED"
+  | string;
+
+// Status atual do conjunto — checado antes de pausar pra não gastar chamada
+// de API repausando algo que já está pausado/arquivado/deletado.
+export async function fetchAdSetStatus(adSetId: string, token: string): Promise<AdSetEffectiveStatus> {
+  const json = await graphGet<{ effective_status: AdSetEffectiveStatus }>(`/${adSetId}`, {
+    fields: "effective_status",
+    access_token: token,
+  });
+  return json.effective_status;
+}
+
+export async function pauseAdSet(adSetId: string, token: string): Promise<void> {
+  await graphPost<{ success: boolean }>(`/${adSetId}`, {
+    status: "PAUSED",
+    access_token: token,
   });
 }
