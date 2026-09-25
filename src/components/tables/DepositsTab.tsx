@@ -11,6 +11,7 @@ interface Props {
 }
 
 const PINK = "#e6007a";
+const PURPLE = "#8b2fe0";
 
 interface SummaryRow {
   currency: string;
@@ -142,7 +143,7 @@ export function DepositsTab({ since, until }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <LineTrendChart
               title={`Depósitos por dia (${s.currency})`}
               data={(daily[s.currency] || []).map((d) => ({ x: d.date, y: d.amount }))}
@@ -150,6 +151,16 @@ export function DepositsTab({ since, until }: Props) {
               formatValue={(v) => formatCurrency(v, s.currency)}
               formatX={formatDateShort}
             />
+            <LineTrendChart
+              title={`FTDs por dia (${s.currency})`}
+              data={(daily[s.currency] || []).map((d) => ({ x: d.date, y: d.ftdCount }))}
+              color={PURPLE}
+              formatValue={(v) => formatNumber(v)}
+              formatX={formatDateShort}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
             <HourBarChart
               title={`Depósitos por hora do dia (${s.currency})`}
               data={(hourly[s.currency] || []).map((h) => ({ hour: h.hour, value: h.amount }))}
