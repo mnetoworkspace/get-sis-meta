@@ -6,6 +6,7 @@ import {
   setObjectStatus,
   fetchObjectBudget,
   setObjectBudget,
+  duplicateAdSet,
   objectIdFromInsight,
   objectNameFromInsight,
   type ObjectInsight,
@@ -15,7 +16,7 @@ import { pickFtd, pickResult } from "@/lib/results";
 import { fetchExchangeRate } from "@/lib/fx";
 import { sendPushToAll } from "@/lib/push/send";
 import { todayISO } from "@/lib/format";
-import { evaluateGroup, isBudgetAction, type RuleMetrics } from "@/lib/automation/rule-types";
+import { evaluateGroup, isBudgetAction, isDuplicateAction, type RuleMetrics } from "@/lib/automation/rule-types";
 import { notificationDecision } from "@/lib/notifications/settings";
 import type { AdAccount, AutomationRule, MetaCredential } from "@/types/db";
 
@@ -150,10 +151,102 @@ async function buildMetrics(row: ObjectInsight, currency: string | null): Promis
   };
 }
 
+const WINDOW_MS: Record<string, number> = { minute: 60_000, hour: 3_600_000, day: 86_400_000 };
+
+// Trava principal contra duplicação em cadeia (a cópia batendo a condição de
+// novo e gerando outra cópia, sem fim) — totalmente configurável por regra.
+// Conta duplicações já feitas por ESSA regra dentro da janela de tempo, não
+// por objeto — então o mesmo conjunto pode ser duplicado de novo dentro do
+// limite, se a condição continuar batendo (comportamento pedido
+// explicitamente, não um bug).
+async function countRecentDuplications(ruleId: string, windowMs: number): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count } = await supabase
+    .from("automation_rule_duplications")
+    .select("id", { count: "exact", head: true })
+    .eq("rule_id", ruleId)
+    .gte("created_at", since);
+  return count ?? 0;
+}
+
+// Duplicar é a ação de maior risco: cria um conjunto novo que já nasce
+// ATIVO e gastando (decisão explícita, não nasce pausado pra revisão), então
+// qualquer erro de configuração ou de limite mal ajustado tem efeito real em
+// dinheiro — daí o cuidado extra nessa função, separada do resto do fluxo
+// de pause/activate/budget que reusa dedupe por dia.
+async function handleDuplicateAction(
+  rule: AutomationRule,
+  objectId: string,
+  objectName: string,
+  account: AdAccount,
+  token: string,
+  pushEnabled: boolean,
+  silent: boolean,
+  runningCount: { value: number },
+): Promise<boolean> {
+  if (!rule.duplicate_limit_count || !rule.duplicate_limit_window) return false;
+  const windowMs = WINDOW_MS[rule.duplicate_limit_window];
+  if (!windowMs) return false;
+
+  if (runningCount.value >= rule.duplicate_limit_count) return false; // limite já batido nesse ciclo
+
+  const supabase = createSupabaseAdminClient();
+
+  let result: { newAdSetId: string; newAdIds: string[] };
+  try {
+    result = await duplicateAdSet(objectId, account.id, token);
+  } catch (err) {
+    console.error(`[rules-engine] falha ao duplicar conjunto ${objectId}:`, err);
+    return false;
+  }
+
+  runningCount.value += 1;
+
+  const { error: logError } = await supabase.from("automation_rule_duplications").insert({
+    rule_id: rule.id,
+    ad_account_id: account.id,
+    source_object_id: objectId,
+    created_object_id: result.newAdSetId,
+  });
+  if (logError) {
+    console.error("[rules-engine] falha ao registrar duplicação:", logError);
+  }
+
+  await supabase.from("notifications").insert({
+    type: "rule_duplicate",
+    title: `Conjunto · ${objectName}`,
+    body: `Regra "${rule.name}". Duplicado como novo conjunto ${result.newAdSetId} (${result.newAdIds.length} anúncio(s)).`,
+    metadata: {
+      rule_id: rule.id,
+      scope: rule.scope,
+      action: rule.action,
+      object_id: objectId,
+      object_name: objectName,
+      ad_account_id: account.id,
+      new_adset_id: result.newAdSetId,
+      new_ad_ids: result.newAdIds,
+    },
+    dedupe_key: `RULE_DUPLICATE:${rule.id}:${result.newAdSetId}`,
+  });
+
+  if (pushEnabled) {
+    await sendPushToAll({
+      title: "🧬 Conjunto duplicado automaticamente",
+      body: `"${objectName}" — regra "${rule.name}". Novo conjunto criado e ativo.`,
+      url: "/",
+      silent,
+    });
+  }
+
+  return true;
+}
+
 async function evaluateRule(
   rule: AutomationRule,
   account: AdAccount,
   token: string,
+  duplicateRunningCount: { value: number } | null,
 ): Promise<number> {
   const supabase = createSupabaseAdminClient();
   let actioned = 0;
@@ -176,6 +269,26 @@ async function evaluateRule(
     if (!evaluateGroup(rule.rules, metrics)) continue;
 
     const objectName = objectNameFromInsight(row, rule.scope) || objectId;
+
+    // Duplicar não reusa o fluxo de dedupe-por-dia abaixo (feito pra
+    // pause/activate/budget, onde repetir a ação no mesmo objeto no mesmo
+    // dia é inútil/perigoso) — aqui cada duplicação bem-sucedida cria um
+    // objeto novo e distinto, e a trava real é o limite de taxa configurado
+    // na regra, checado dentro de handleDuplicateAction.
+    if (isDuplicateAction(rule.action)) {
+      const didDuplicate = await handleDuplicateAction(
+        rule,
+        objectId,
+        objectName,
+        account,
+        token,
+        pushEnabled,
+        silent,
+        duplicateRunningCount ?? { value: Infinity },
+      );
+      if (didDuplicate) actioned += 1;
+      continue;
+    }
 
     // Pra ações de orçamento, resolve ANTES do dedupe qual objeto vai ser
     // alterado de verdade — se cair no fallback de campanha (CBO), o
@@ -303,6 +416,15 @@ export async function runAutomationRules(): Promise<RulesRunSummary> {
     const targetCredentials =
       rule.bm_ids.length > 0 ? credentials.filter((c) => rule.bm_ids.includes(c.bm_id)) : credentials;
 
+    // Contador compartilhado entre TODAS as contas que essa regra varre
+    // nesse ciclo — o limite de duplicação é por regra, não por conta, senão
+    // uma regra sem bm_ids (todos os BMs) multiplicaria o limite por conta.
+    let duplicateRunningCount: { value: number } | null = null;
+    if (isDuplicateAction(rule.action) && rule.duplicate_limit_count && rule.duplicate_limit_window) {
+      const windowMs = WINDOW_MS[rule.duplicate_limit_window];
+      duplicateRunningCount = { value: windowMs ? await countRecentDuplications(rule.id, windowMs) : Infinity };
+    }
+
     for (const credential of targetCredentials) {
       const { data: accounts, error: accError } = await supabase
         .from("ad_accounts")
@@ -320,7 +442,7 @@ export async function runAutomationRules(): Promise<RulesRunSummary> {
       for (const account of accounts) {
         summary.accountsChecked += 1;
         try {
-          summary.objectsActioned += await evaluateRule(rule, account, credential.system_user_token);
+          summary.objectsActioned += await evaluateRule(rule, account, credential.system_user_token, duplicateRunningCount);
         } catch (err) {
           const message = err instanceof Error ? err.message : "erro desconhecido";
           console.error(`[rules-engine] falha ao avaliar regra ${rule.id} na conta ${account.id}:`, err);

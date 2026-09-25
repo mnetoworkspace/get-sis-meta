@@ -4,15 +4,27 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const SCOPES = new Set(["campaign", "adset", "ad"]);
-const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget"]);
+const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget", "duplicate"]);
 const BUDGET_ACTIONS = new Set(["increase_budget", "decrease_budget"]);
 const BUDGET_TYPES = new Set(["fixed", "percentage"]);
+const DUPLICATE_WINDOWS = new Set(["minute", "hour", "day"]);
 
 export async function PATCH(request: Request, { params }: RouteContext<"/api/automation-rules/[id]">) {
   const { id } = await params;
   const body = await request.json();
-  const { name, scope, action, time_window, bm_ids, is_active, rules, budget_adjustment_type, budget_adjustment_value } =
-    body;
+  const {
+    name,
+    scope,
+    action,
+    time_window,
+    bm_ids,
+    is_active,
+    rules,
+    budget_adjustment_type,
+    budget_adjustment_value,
+    duplicate_limit_count,
+    duplicate_limit_window,
+  } = body;
 
   const update: Record<string, unknown> = {};
   if (name !== undefined) update.name = name;
@@ -31,6 +43,24 @@ export async function PATCH(request: Request, { params }: RouteContext<"/api/aut
     } else {
       update.budget_adjustment_type = null;
       update.budget_adjustment_value = null;
+    }
+
+    if (action === "duplicate") {
+      const finalScope = scope !== undefined && SCOPES.has(scope) ? scope : undefined;
+      if (finalScope !== "adset") {
+        return NextResponse.json({ error: "duplicar só é suportado no nível conjunto de anúncios" }, { status: 400 });
+      }
+      if (!Number.isFinite(Number(duplicate_limit_count)) || Number(duplicate_limit_count) <= 0) {
+        return NextResponse.json({ error: "informe um limite de duplicações maior que zero" }, { status: 400 });
+      }
+      if (!DUPLICATE_WINDOWS.has(duplicate_limit_window)) {
+        return NextResponse.json({ error: "informe a janela do limite (minuto, hora ou dia)" }, { status: 400 });
+      }
+      update.duplicate_limit_count = Number(duplicate_limit_count);
+      update.duplicate_limit_window = duplicate_limit_window;
+    } else {
+      update.duplicate_limit_count = null;
+      update.duplicate_limit_window = null;
     }
   }
   if (time_window !== undefined) update.time_window = time_window === "lifetime" ? "lifetime" : "today";

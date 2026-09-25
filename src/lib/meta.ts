@@ -431,3 +431,148 @@ export async function setObjectBudget(
     access_token: token,
   });
 }
+
+// --- Duplicação de conjunto de anúncios (ação "duplicate" das regras) ---
+// A Graph API não tem um endpoint de "duplicar" pronto (diferente do botão
+// no Ads Manager) — precisa ler a configuração completa do conjunto
+// original e recriar um novo com os mesmos dados. Suporta só nível conjunto
+// por enquanto (duplicar campanha inteira, com todos os conjuntos dela, é
+// uma superfície de erro bem maior — fica pra uma fase futura).
+
+const ADSET_FULL_FIELDS =
+  "id,name,campaign_id,daily_budget,lifetime_budget,bid_amount,billing_event,optimization_goal,targeting,promoted_object,destination_type,attribution_spec,status";
+
+export interface AdSetFullConfig {
+  id: string;
+  name: string;
+  campaign_id: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  bid_amount?: string;
+  billing_event?: string;
+  optimization_goal?: string;
+  targeting?: unknown;
+  promoted_object?: unknown;
+  destination_type?: string;
+  attribution_spec?: unknown;
+  status: string;
+}
+
+export async function fetchAdSetFullConfig(adsetId: string, token: string): Promise<AdSetFullConfig> {
+  return graphGet<AdSetFullConfig>(`/${adsetId}`, { fields: ADSET_FULL_FIELDS, access_token: token });
+}
+
+export interface AdSetAdSummary {
+  id: string;
+  name: string;
+  status: string;
+  creative?: { id: string };
+}
+
+export async function fetchAdSetAds(adsetId: string, token: string): Promise<AdSetAdSummary[]> {
+  return graphGetAllPages<AdSetAdSummary>(`/${adsetId}/ads`, {
+    fields: "id,name,status,creative{id}",
+    access_token: token,
+    limit: "100",
+  });
+}
+
+interface CreateAdSetInput {
+  name: string;
+  campaign_id: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  bid_amount?: string;
+  billing_event?: string;
+  optimization_goal?: string;
+  targeting?: unknown;
+  promoted_object?: unknown;
+  destination_type?: string;
+  attribution_spec?: unknown;
+  status: "ACTIVE" | "PAUSED";
+}
+
+export async function createAdSet(adAccountId: string, input: CreateAdSetInput, token: string): Promise<{ id: string }> {
+  const params: Record<string, string> = {
+    name: input.name,
+    campaign_id: input.campaign_id,
+    status: input.status,
+    access_token: token,
+  };
+  // Só repassa orçamento próprio se o original tinha um — se a campanha é
+  // CBO (orçamento otimizado no nível campanha), nem o conjunto original
+  // nem a cópia têm orçamento próprio, e a cópia herda o mesmo CBO
+  // automaticamente por estar na mesma campanha. Forçar um orçamento aqui
+  // repetiria o mesmo bug de CBO que já corrigimos nas outras ações.
+  if (input.daily_budget) params.daily_budget = input.daily_budget;
+  if (input.lifetime_budget) params.lifetime_budget = input.lifetime_budget;
+  if (input.bid_amount) params.bid_amount = input.bid_amount;
+  if (input.billing_event) params.billing_event = input.billing_event;
+  if (input.optimization_goal) params.optimization_goal = input.optimization_goal;
+  if (input.targeting) params.targeting = JSON.stringify(input.targeting);
+  if (input.promoted_object) params.promoted_object = JSON.stringify(input.promoted_object);
+  if (input.destination_type) params.destination_type = input.destination_type;
+  if (input.attribution_spec) params.attribution_spec = JSON.stringify(input.attribution_spec);
+
+  return graphPost<{ id: string }>(`/${adAccountId}/adsets`, params);
+}
+
+export async function createAd(
+  adAccountId: string,
+  input: { name: string; adset_id: string; creative_id: string; status: "ACTIVE" | "PAUSED" },
+  token: string,
+): Promise<{ id: string }> {
+  return graphPost<{ id: string }>(`/${adAccountId}/ads`, {
+    name: input.name,
+    adset_id: input.adset_id,
+    creative: JSON.stringify({ creative_id: input.creative_id }),
+    status: input.status,
+    access_token: token,
+  });
+}
+
+export interface DuplicateAdSetResult {
+  newAdSetId: string;
+  newAdIds: string[];
+}
+
+// Duplica o conjunto (config completa: orçamento, targeting, lance,
+// objetivo) e cada anúncio dele (reaproveitando o mesmo criativo — não
+// recria o criativo em si, só referencia o creative_id existente). Anúncios
+// sem criativo (nunca deveria acontecer, mas a API não garante) são pulados
+// em vez de falhar a duplicação inteira.
+export async function duplicateAdSet(adsetId: string, adAccountId: string, token: string): Promise<DuplicateAdSetResult> {
+  const config = await fetchAdSetFullConfig(adsetId, token);
+  const ads = await fetchAdSetAds(adsetId, token);
+
+  const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+  const newName = `${config.name} - Dup ${timestamp}`;
+
+  const created = await createAdSet(
+    adAccountId,
+    {
+      name: newName,
+      campaign_id: config.campaign_id,
+      daily_budget: config.daily_budget,
+      lifetime_budget: config.lifetime_budget,
+      bid_amount: config.bid_amount,
+      billing_event: config.billing_event,
+      optimization_goal: config.optimization_goal,
+      targeting: config.targeting,
+      promoted_object: config.promoted_object,
+      destination_type: config.destination_type,
+      attribution_spec: config.attribution_spec,
+      status: "ACTIVE",
+    },
+    token,
+  );
+
+  const newAdIds: string[] = [];
+  for (const ad of ads) {
+    if (!ad.creative?.id) continue;
+    const newAd = await createAd(adAccountId, { name: ad.name, adset_id: created.id, creative_id: ad.creative.id, status: "ACTIVE" }, token);
+    newAdIds.push(newAd.id);
+  }
+
+  return { newAdSetId: created.id, newAdIds };
+}

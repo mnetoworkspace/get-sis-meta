@@ -72,6 +72,8 @@ export interface AutomationRule {
   rules: import("@/lib/automation/rule-types").RuleConditionGroup;
   budget_adjustment_type: import("@/lib/automation/rule-types").BudgetAdjustmentType | null;
   budget_adjustment_value: number | null;
+  duplicate_limit_count: number | null;
+  duplicate_limit_window: import("@/lib/automation/rule-types").DuplicateLimitWindow | null;
   bm_ids: string[];
   is_active: boolean;
   created_at: string;

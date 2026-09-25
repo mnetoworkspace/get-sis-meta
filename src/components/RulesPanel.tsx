@@ -8,11 +8,14 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { ConditionGroupEditor } from "@/components/automation/condition-group-editor";
 import {
   ACTION_OPTIONS,
+  DUPLICATE_WINDOW_OPTIONS,
   actionLabel,
   describeGroup,
   emptyConditionGroup,
   isBudgetAction,
+  isDuplicateAction,
   type BudgetAdjustmentType,
+  type DuplicateLimitWindow,
   type RuleAction,
   type RuleConditionGroup,
 } from "@/lib/automation/rule-types";
@@ -33,6 +36,8 @@ interface RuleRow {
   rules: RuleConditionGroup;
   budget_adjustment_type: BudgetAdjustmentType | null;
   budget_adjustment_value: number | null;
+  duplicate_limit_count: number | null;
+  duplicate_limit_window: DuplicateLimitWindow | null;
   bm_ids: string[];
   is_active: boolean;
 }
@@ -54,6 +59,8 @@ function emptyForm() {
     rules: emptyConditionGroup(),
     budget_adjustment_type: "percentage" as BudgetAdjustmentType,
     budget_adjustment_value: "",
+    duplicate_limit_count: "1",
+    duplicate_limit_window: "day" as DuplicateLimitWindow,
   };
 }
 
@@ -121,6 +128,8 @@ export default function RulesPanel() {
       rules: rule.rules ?? emptyConditionGroup(),
       budget_adjustment_type: rule.budget_adjustment_type ?? "percentage",
       budget_adjustment_value: rule.budget_adjustment_value != null ? String(rule.budget_adjustment_value) : "",
+      duplicate_limit_count: rule.duplicate_limit_count != null ? String(rule.duplicate_limit_count) : "1",
+      duplicate_limit_window: rule.duplicate_limit_window ?? "day",
     });
     setMessage(null);
   }
@@ -140,6 +149,16 @@ export default function RulesPanel() {
     if (isBudgetAction(form.action) && Number(form.budget_adjustment_value) <= 0) {
       setMessage("Informe um valor de ajuste de orçamento maior que zero.");
       return;
+    }
+    if (isDuplicateAction(form.action)) {
+      if (form.scope !== "adset") {
+        setMessage("Duplicar só é suportado no nível conjunto de anúncios.");
+        return;
+      }
+      if (Number(form.duplicate_limit_count) <= 0) {
+        setMessage("Informe um limite de duplicações maior que zero.");
+        return;
+      }
     }
     setBusy(true);
     setMessage(null);
@@ -321,6 +340,55 @@ export default function RulesPanel() {
               </p>
             )}
 
+            {isDuplicateAction(form.action) && form.scope !== "adset" && (
+              <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-soft)] px-3 py-2 text-xs text-[var(--warning)]">
+                Duplicar só é suportado no nível Conjunto de anúncios por enquanto. Escolha esse nível.
+              </p>
+            )}
+
+            {isDuplicateAction(form.action) && (
+              <div className="space-y-2">
+                <p className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">
+                  A cópia nasce ATIVA e já gasta orçamento — o limite abaixo é a única trava contra
+                  duplicação em cadeia (a cópia batendo a condição de novo e gerando outra cópia). Comece
+                  com um limite baixo.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Limite de duplicações
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={form.duplicate_limit_count}
+                      onChange={(e) => setForm({ ...form, duplicate_limit_count: e.target.value })}
+                      className="input w-full"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Janela
+                    </label>
+                    <select
+                      value={form.duplicate_limit_window}
+                      onChange={(e) => setForm({ ...form, duplicate_limit_window: e.target.value as DuplicateLimitWindow })}
+                      className="input w-full"
+                    >
+                      {DUPLICATE_WINDOW_OPTIONS.map((w) => (
+                        <option key={w.value} value={w.value}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isBudgetAction(form.action) && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -441,6 +509,15 @@ export default function RulesPanel() {
                         {rule.budget_adjustment_type === "percentage"
                           ? `${rule.budget_adjustment_value}%`
                           : `R$ ${rule.budget_adjustment_value.toFixed(2)}`}
+                      </>
+                    )}
+                    {isDuplicateAction(rule.action) && rule.duplicate_limit_count != null && (
+                      <>
+                        {" "}
+                        (limite: {rule.duplicate_limit_count}
+                        {" "}
+                        {DUPLICATE_WINDOW_OPTIONS.find((w) => w.value === rule.duplicate_limit_window)?.label}
+                        )
                       </>
                     )}{" "}
                     {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
