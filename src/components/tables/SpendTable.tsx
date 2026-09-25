@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { formatCurrency, formatNumber } from "@/lib/format";
-import { applySort, nextSortState, NO_SORT, type SortState } from "@/lib/sort";
+import { applySort, nextSortState, usePersistedSort } from "@/lib/sort";
 import { SortableTh } from "@/components/ui/sortable-th";
 import { ColumnManagerButton } from "@/components/ui/column-manager";
 import { useColumnConfig, type ColumnDef } from "@/lib/column-config";
@@ -75,7 +75,7 @@ const ACCOUNT_COLUMNS = ALL_COLUMNS;
 const ALIGN_LEFT: ColKey[] = ["bm"];
 
 export function SpendTable({ rows, mode }: Props) {
-  const [sort, setSort] = useState<SortState>(NO_SORT);
+  const [sort, setSort] = usePersistedSort(`spend-table-${mode}-v1`);
   const columns = mode === "bm" ? BM_COLUMNS : ACCOUNT_COLUMNS;
   const { visibleCols, colOrder, orderedVisible, toggle, resetToDefault, dragStart, dragOver, dragEnd } =
     useColumnConfig<ColKey>(`spend-table-${mode}-v1`, columns);

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { RefreshCw, Settings, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { daysAgoISO, previousPeriod, todayISO } from "@/lib/format";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
 import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
@@ -98,6 +98,10 @@ export default function Dashboard() {
   const [compare, setCompare] = useState<{ current: PeriodTotals; previous: PeriodTotals; currency: string | null } | null>(
     null,
   );
+  // Evita sobrescrever o localStorage com o estado padrão no primeiro efeito,
+  // antes do efeito de carregamento aplicar o que estava salvo (mesmo padrão
+  // usado em useColumnConfig/usePersistedSort).
+  const skipDashboardStateWrite = useRef(true);
 
   const loadFilters = useCallback(async () => {
     const [accRes, bmRes] = await Promise.all([fetch("/api/ad-accounts"), fetch("/api/bms")]);
@@ -170,6 +174,44 @@ export default function Dashboard() {
       currency: curr.currency || prevTotals.currency,
     });
   }, [since, until, tab, accountFilters, bmFilter]);
+
+  // Restaura aba/período/filtros salvos deste navegador — roda uma vez no
+  // mount, antes do sync abaixo tentar escrever o estado padrão.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rakebet-dashboard-state");
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<{
+          tab: Tab;
+          since: string;
+          until: string;
+          bmFilter: string;
+          accountFilters: string[];
+        }>;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (parsed.tab) setTab(parsed.tab);
+        if (parsed.since) setSince(parsed.since);
+        if (parsed.until) setUntil(parsed.until);
+        if (parsed.bmFilter !== undefined) setBmFilter(parsed.bmFilter);
+        if (Array.isArray(parsed.accountFilters)) setAccountFilters(parsed.accountFilters);
+      }
+    } catch {
+      // localStorage indisponível (modo privado, etc.) — segue com os padrões.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (skipDashboardStateWrite.current) {
+      skipDashboardStateWrite.current = false;
+      return;
+    }
+    try {
+      localStorage.setItem(
+        "rakebet-dashboard-state",
+        JSON.stringify({ tab, since, until, bmFilter, accountFilters }),
+      );
+    } catch {}
+  }, [tab, since, until, bmFilter, accountFilters]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
 export type SortDir = "asc" | "desc" | null;
 
 export interface SortState {
@@ -38,4 +42,36 @@ export function applySort<T>(
     }
     return ((av as number) - (bv as number)) * dir;
   });
+}
+
+// Persiste a ordenação da tabela no localStorage (por tabela, via storageKey)
+// — mesmo padrão de useColumnConfig (lib/column-config.ts): carrega o padrão
+// primeiro, sincroniza com o salvo assim que montar, e só passa a escrever
+// depois do primeiro efeito pra não sobrescrever o salvo com o padrão sempre
+// que a tabela remonta (troca de aba, período, sync).
+export function usePersistedSort(storageKey: string, defaultSort: SortState = NO_SORT) {
+  const [sort, setSort] = useState<SortState>(defaultSort);
+  const skipWrite = useRef(true);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}:sort`);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setSort(JSON.parse(saved) as SortState);
+    } catch {
+      // localStorage indisponível (modo privado, etc.) — segue com o padrão.
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (skipWrite.current) {
+      skipWrite.current = false;
+      return;
+    }
+    try {
+      localStorage.setItem(`${storageKey}:sort`, JSON.stringify(sort));
+    } catch {}
+  }, [storageKey, sort]);
+
+  return [sort, setSort] as const;
 }

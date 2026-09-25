@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { formatCurrency, formatNumber } from "@/lib/format";
-import { applySort, nextSortState, NO_SORT, type SortState } from "@/lib/sort";
+import { applySort, nextSortState, usePersistedSort } from "@/lib/sort";
 import { SortableTh } from "@/components/ui/sortable-th";
 import { ColumnManagerButton } from "@/components/ui/column-manager";
 import { useColumnConfig, type ColumnDef } from "@/lib/column-config";
@@ -61,7 +61,7 @@ const COLUMNS: ColumnDef<ColKey>[] = [
 const ALIGN_LEFT: ColKey[] = ["campaign", "adset", "ad"];
 
 export function DetailedTable({ rows }: Props) {
-  const [sort, setSort] = useState<SortState>(NO_SORT);
+  const [sort, setSort] = usePersistedSort("detailed-table-v1");
   const { visibleCols, colOrder, orderedVisible, toggle, resetToDefault, dragStart, dragOver, dragEnd } =
     useColumnConfig<ColKey>("detailed-table-v1", COLUMNS);
 
