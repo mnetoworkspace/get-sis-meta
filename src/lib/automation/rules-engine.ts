@@ -36,16 +36,56 @@ function isUniqueViolation(err: { code?: string } | null): boolean {
   return err?.code === "23505";
 }
 
-// Retorna a descrição do que mudou (pra notificação), ou null se não havia
-// orçamento próprio nesse nível pra ajustar (ex: conjunto sob uma campanha
-// com orçamento otimizado no nível da campanha — CBO — não tem budget
-// próprio) ou se o cálculo não fecha.
-async function applyBudgetAdjustment(rule: AutomationRule, objectId: string, token: string): Promise<string | null> {
-  const budget = await fetchObjectBudget(objectId, token);
-  const field = budget.daily_budget != null ? "daily_budget" : budget.lifetime_budget != null ? "lifetime_budget" : null;
-  if (!field) return null;
+interface BudgetTarget {
+  targetId: string;
+  field: "daily_budget" | "lifetime_budget";
+  currentCents: number;
+  fellBackToCampaign: boolean;
+}
 
-  const currentCents = Number(field === "daily_budget" ? budget.daily_budget : budget.lifetime_budget);
+// Acha ONDE o orçamento de verdade está. Um conjunto sem orçamento próprio
+// normalmente significa que a campanha dele usa orçamento otimizado (CBO)
+// — o valor real está na campanha, não no conjunto. Sem esse fallback, uma
+// regra de orçamento nível "conjunto" numa campanha CBO nunca encontraria
+// nada pra ajustar e ficaria silenciosamente inútil (sem erro, sem
+// notificação — pior tipo de falha).
+async function resolveBudgetTarget(
+  objectId: string,
+  scope: RuleScope,
+  campaignId: string | undefined,
+  token: string,
+): Promise<BudgetTarget | null> {
+  const own = await fetchObjectBudget(objectId, token);
+  if (own.daily_budget != null) {
+    return { targetId: objectId, field: "daily_budget", currentCents: Number(own.daily_budget), fellBackToCampaign: false };
+  }
+  if (own.lifetime_budget != null) {
+    return { targetId: objectId, field: "lifetime_budget", currentCents: Number(own.lifetime_budget), fellBackToCampaign: false };
+  }
+
+  if (scope === "adset" && campaignId) {
+    const campaign = await fetchObjectBudget(campaignId, token);
+    if (campaign.daily_budget != null) {
+      return { targetId: campaignId, field: "daily_budget", currentCents: Number(campaign.daily_budget), fellBackToCampaign: true };
+    }
+    if (campaign.lifetime_budget != null) {
+      return {
+        targetId: campaignId,
+        field: "lifetime_budget",
+        currentCents: Number(campaign.lifetime_budget),
+        fellBackToCampaign: true,
+      };
+    }
+  }
+
+  return null;
+}
+
+// Calcula o novo valor e aplica — recebe o alvo já resolvido (objeto ou a
+// campanha, no caso de fallback de CBO) pra não precisar buscar o
+// orçamento de novo.
+async function applyBudgetAdjustment(rule: AutomationRule, target: BudgetTarget, token: string): Promise<string | null> {
+  const { currentCents, field, fellBackToCampaign } = target;
   if (!Number.isFinite(currentCents) || currentCents <= 0) return null;
 
   const adjustmentValue = rule.budget_adjustment_value ?? 0;
@@ -58,10 +98,13 @@ async function applyBudgetAdjustment(rule: AutomationRule, objectId: string, tok
   const newCents = Math.max(MIN_BUDGET_CENTS, Math.round(rawNewCents));
   if (newCents === currentCents) return null;
 
-  await setObjectBudget(objectId, field, newCents, token);
+  await setObjectBudget(target.targetId, field, newCents, token);
 
   const fieldLabel = field === "daily_budget" ? "diário" : "vitalício";
-  return `Orçamento ${fieldLabel} de R$ ${(currentCents / 100).toFixed(2)} para R$ ${(newCents / 100).toFixed(2)}.`;
+  const note = fellBackToCampaign
+    ? " (conjunto está numa campanha com orçamento otimizado/CBO, sem orçamento próprio — ajustei o orçamento da campanha)"
+    : "";
+  return `Orçamento ${fieldLabel} de R$ ${(currentCents / 100).toFixed(2)} para R$ ${(newCents / 100).toFixed(2)}.${note}`;
 }
 
 // Cache simples por execução — evita pedir a mesma cotação de câmbio várias
@@ -124,10 +167,23 @@ async function evaluateRule(
     if (!evaluateGroup(rule.rules, metrics)) continue;
 
     const objectName = objectNameFromInsight(row, rule.scope) || objectId;
-    const dedupeSuffix = rule.time_window === "lifetime" ? "lifetime" : todayISO();
-    const dedupeKey = `RULE_${rule.action.toUpperCase()}:${rule.id}:${objectId}:${dedupeSuffix}`;
 
-    // Registra a tentativa ANTES de agir, pra nunca reavaliar o mesmo objeto
+    // Pra ações de orçamento, resolve ANTES do dedupe qual objeto vai ser
+    // alterado de verdade — se cair no fallback de campanha (CBO), o
+    // dedupe precisa ser pela campanha, não pelo conjunto, senão N
+    // conjuntos da mesma campanha CBO cada um dispararia um ajuste
+    // separado nela dentro da mesma checagem.
+    let budgetTarget: BudgetTarget | null = null;
+    if (isBudgetAction(rule.action)) {
+      budgetTarget = await resolveBudgetTarget(objectId, rule.scope, row.campaign_id, token);
+      if (!budgetTarget) continue; // nem o objeto nem a campanha (fallback) têm orçamento próprio
+    }
+
+    const dedupeObjectId = budgetTarget ? budgetTarget.targetId : objectId;
+    const dedupeSuffix = rule.time_window === "lifetime" ? "lifetime" : todayISO();
+    const dedupeKey = `RULE_${rule.action.toUpperCase()}:${rule.id}:${dedupeObjectId}:${dedupeSuffix}`;
+
+    // Registra a tentativa ANTES de agir, pra nunca reavaliar o mesmo alvo
     // duas vezes no mesmo dia — economiza chamada de API e evita ação/
     // notificação repetida (crítico pra orçamento: sem isso, cada checagem
     // de 5 min aumentaria/diminuiria de novo).
@@ -141,6 +197,7 @@ async function evaluateRule(
         action: rule.action,
         object_id: objectId,
         object_name: objectName,
+        budget_target_id: budgetTarget?.targetId,
         campaign_id: row.campaign_id,
         ad_account_id: account.id,
         metrics,
@@ -158,11 +215,9 @@ async function evaluateRule(
     try {
       let description: string;
 
-      if (isBudgetAction(rule.action)) {
-        const result = await applyBudgetAdjustment(rule, objectId, token);
-        // Sem orçamento próprio nesse nível (ex: conjunto sob campanha com
-        // orçamento otimizado) ou delta zerado — nada a fazer.
-        if (!result) continue;
+      if (budgetTarget) {
+        const result = await applyBudgetAdjustment(rule, budgetTarget, token);
+        if (!result) continue; // delta zerado ou orçamento atual inválido
         description = result;
       } else {
         const status = await fetchObjectStatus(objectId, token);
