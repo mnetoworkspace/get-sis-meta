@@ -1,3 +1,9 @@
+// Sem cache/offline proposital — é um painel de dados ao vivo, não faz
+// sentido servir uma versão velha. O listener existe só porque o Chrome
+// exige um service worker com handler de fetch pra considerar o app
+// instalável (critério de "Add to Home Screen" em modo standalone).
+self.addEventListener("fetch", () => {});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
