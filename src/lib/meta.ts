@@ -161,6 +161,28 @@ export const ACCOUNT_STATUS_MAP: Record<number, string> = {
   202: "ANY_CLOSED",
 };
 
+// Tradução do status cru da Meta pra algo acionável — o código sozinho
+// (ex: "UNSETTLED") não diz pra quem tá olhando o painel o que fazer a
+// respeito. UNSETTLED confirmado pelo time como falha de pagamento (cobrança
+// não processada); os demais seguem o significado padrão da Meta.
+export const ACCOUNT_STATUS_DESCRIPTIONS: Record<string, string> = {
+  ACTIVE: "Ativa normalmente.",
+  DISABLED: "Desabilitada pela Meta — geralmente por violação de política.",
+  UNSETTLED: "Falha de pagamento — a cobrança não foi processada, precisa atualizar o método de pagamento.",
+  PENDING_RISK_REVIEW: "Em revisão de risco pela Meta.",
+  PENDING_SETTLEMENT: "Pagamento pendente de processamento.",
+  IN_GRACE_PERIOD: "Em período de carência — normalmente após uma falha de pagamento, antes de suspender de vez.",
+  PENDING_CLOSURE: "Em processo de fechamento.",
+  CLOSED: "Fechada.",
+  ANY_ACTIVE: "Ativa.",
+  ANY_CLOSED: "Fechada.",
+};
+
+export function accountStatusDescription(status: string | null): string | null {
+  if (!status) return null;
+  return ACCOUNT_STATUS_DESCRIPTIONS[status] ?? null;
+}
+
 /**
  * Status atual (traduzido) de uma única conta de anúncio na Meta — usado
  * pelo watcher que compara com o status salvo em `ad_accounts` e avisa

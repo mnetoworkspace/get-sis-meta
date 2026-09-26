@@ -14,6 +14,19 @@ interface StatusAccount {
   currency: string | null;
 }
 
+// Cópia local do mapa de src/lib/meta.ts — esse arquivo é client-side e
+// puxar lib/meta.ts inteiro (que faz chamadas à Graph API) só pra pegar
+// esses rótulos infla o bundle à toa.
+const STATUS_DESCRIPTIONS: Record<string, string> = {
+  DISABLED: "Desabilitada pela Meta — geralmente por violação de política.",
+  UNSETTLED: "Falha de pagamento — a cobrança não foi processada.",
+  PENDING_RISK_REVIEW: "Em revisão de risco pela Meta.",
+  PENDING_SETTLEMENT: "Pagamento pendente de processamento.",
+  IN_GRACE_PERIOD: "Em período de carência, normalmente após falha de pagamento.",
+  PENDING_CLOSURE: "Em processo de fechamento.",
+  CLOSED: "Fechada.",
+};
+
 interface StatusBm {
   id: string;
   name: string;
@@ -176,15 +189,19 @@ export default function StatusPanel() {
                   {bm.ad_accounts.length === 0 && (
                     <p className="py-2 text-xs text-[var(--text-muted)]">Nenhuma conta cadastrada.</p>
                   )}
-                  {bm.ad_accounts.map((account) => (
-                    <div key={account.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                      <span className="text-[var(--text)]">
-                        {account.name}
-                        {!account.is_active && <span className="ml-2 text-xs text-[var(--text-muted)]">(inativa no painel)</span>}
-                      </span>
-                      <AccountBadge account={account} />
-                    </div>
-                  ))}
+                  {bm.ad_accounts.map((account) => {
+                    const description = account.status ? STATUS_DESCRIPTIONS[account.status] : null;
+                    return (
+                      <div key={account.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                        <span className="text-[var(--text)]">
+                          {account.name}
+                          {!account.is_active && <span className="ml-2 text-xs text-[var(--text-muted)]">(inativa no painel)</span>}
+                          {description && <span className="mt-0.5 block text-xs text-[var(--danger)]">{description}</span>}
+                        </span>
+                        <AccountBadge account={account} />
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             ))}

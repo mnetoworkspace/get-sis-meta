@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase";
-import { fetchAdAccountStatus, fetchBusinessStatus, MetaApiError } from "@/lib/meta";
+import { accountStatusDescription, fetchAdAccountStatus, fetchBusinessStatus, MetaApiError } from "@/lib/meta";
 import { sendPushToAll } from "@/lib/push/send";
 import { notificationDecision } from "@/lib/notifications/settings";
 import type { AdAccount, BusinessManager, MetaCredential } from "@/types/db";
@@ -135,11 +135,30 @@ export async function checkAccountStatus(): Promise<void> {
 
       const dedupeKey = `ACCOUNT_STATUS:${account.id}:${currentStatus}:${new Date().toISOString().slice(0, 10)}`;
 
+      // Título específico pra falha de pagamento (UNSETTLED) — é um
+      // problema diferente de "bloqueada por política" (DISABLED) e pede
+      // uma ação diferente (atualizar cartão, não abrir contestação).
+      const isPaymentIssue = currentStatus === "UNSETTLED";
+      const description = accountStatusDescription(currentStatus);
+      const title = becameProblem
+        ? isPaymentIssue
+          ? "Falha de pagamento em conta de anúncio"
+          : "Conta de anúncio com problema"
+        : "Conta de anúncio reativada";
+      const body = becameProblem
+        ? `${account.name} — ${currentStatus}${description ? `: ${description}` : "."}`
+        : `${account.name} — voltou a ficar ativa.`;
+
       const { error: insertError } = await supabase.from("notifications").insert({
         type: "account_status",
-        title: becameProblem ? "Conta de anúncio bloqueada" : "Conta de anúncio reativada",
-        body: `${account.name} — status mudou para ${currentStatus}.`,
-        metadata: { ad_account_id: account.id, previous_status: account.status, new_status: currentStatus },
+        title,
+        body,
+        metadata: {
+          ad_account_id: account.id,
+          previous_status: account.status,
+          new_status: currentStatus,
+          status_description: description,
+        },
         dedupe_key: dedupeKey,
       });
 
@@ -152,9 +171,10 @@ export async function checkAccountStatus(): Promise<void> {
 
       if (!pushEnabled) continue;
 
+      const emoji = becameProblem ? (isPaymentIssue ? "💳" : "🚫") : "✅";
       await sendPushToAll({
-        title: becameProblem ? "🚫 Conta de anúncio bloqueada" : "✅ Conta de anúncio reativada",
-        body: `${account.name} — status mudou para ${currentStatus}.`,
+        title: `${emoji} ${title}`,
+        body,
         url: "/",
         silent,
       });
