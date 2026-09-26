@@ -51,6 +51,15 @@ export function nowHourInBrazil(): number {
   return nowInBrazil().getUTCHours();
 }
 
+// Mesma conversão de nowInBrazil(), mas pra uma data/hora qualquer (não só
+// "agora") — usado pra achar o ponto de corte data+hora de uma recarga de
+// cartão, por exemplo.
+export function toBrazilDateHour(isoUtc: string): { date: string; hour: number } {
+  const d = new Date(isoUtc);
+  d.setUTCHours(d.getUTCHours() - 3);
+  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+}
+
 export function daysAgoISO(days: number) {
   const d = nowInBrazil();
   d.setUTCDate(d.getUTCDate() - days);

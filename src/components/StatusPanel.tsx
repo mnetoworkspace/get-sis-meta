@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import CardsSection from "@/components/CardsSection";
 import { daysAgoISO, formatCurrency, todayISO } from "@/lib/format";
 
 interface StatusAccount {
@@ -143,6 +144,8 @@ export default function StatusPanel() {
 
       <main className="page-shell max-w-4xl px-4 py-6 sm:px-6 space-y-6">
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
+
+        <CardsSection />
 
         <div className="flex flex-col gap-3 soft-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
