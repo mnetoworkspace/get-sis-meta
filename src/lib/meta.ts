@@ -598,3 +598,42 @@ export async function duplicateAdSet(adsetId: string, adAccountId: string, token
 
   return { newAdSetId: created.id, newAdIds };
 }
+
+// --- Estrutura ativa com orçamento (previsão de gasto do dia) ---
+// Diferente de insights (o que já foi gasto), isso é a config atual — o
+// teto que CADA campanha/conjunto ativo ainda pode gastar hoje.
+
+export interface ActiveCampaignBudget {
+  id: string;
+  name: string;
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+  effective_status: string;
+}
+
+export async function fetchActiveCampaignsWithBudget(adAccountId: string, token: string): Promise<ActiveCampaignBudget[]> {
+  return graphGetAllPages<ActiveCampaignBudget>(`/${adAccountId}/campaigns`, {
+    fields: "id,name,daily_budget,lifetime_budget,effective_status",
+    filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]),
+    access_token: token,
+    limit: "200",
+  });
+}
+
+export interface ActiveAdSetBudget {
+  id: string;
+  name: string;
+  campaign_id: string;
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+  effective_status: string;
+}
+
+export async function fetchActiveAdSetsWithBudget(adAccountId: string, token: string): Promise<ActiveAdSetBudget[]> {
+  return graphGetAllPages<ActiveAdSetBudget>(`/${adAccountId}/adsets`, {
+    fields: "id,name,campaign_id,daily_budget,lifetime_budget,effective_status",
+    filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]),
+    access_token: token,
+    limit: "200",
+  });
+}

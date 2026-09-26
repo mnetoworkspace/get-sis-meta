@@ -45,6 +45,12 @@ export function todayISO() {
   return nowInBrazil().toISOString().slice(0, 10);
 }
 
+// Hora atual (0-23) no fuso da conta (America/Sao_Paulo) — usado pra saber
+// quantas horas já passaram/faltam no dia (ex: previsão de gasto).
+export function nowHourInBrazil(): number {
+  return nowInBrazil().getUTCHours();
+}
+
 export function daysAgoISO(days: number) {
   const d = nowInBrazil();
   d.setUTCDate(d.getUTCDate() - days);

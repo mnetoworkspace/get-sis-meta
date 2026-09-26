@@ -10,6 +10,7 @@ import { SpendTable, type SpendRow } from "@/components/tables/SpendTable";
 import { DetailedTable, type DetailedRow } from "@/components/tables/DetailedTable";
 import { LogoutButton } from "@/components/LogoutButton";
 import { StatsSummary, type PeriodTotals } from "@/components/StatsSummary";
+import { ForecastCard } from "@/components/ForecastCard";
 import { TrafficTab } from "@/components/tables/TrafficTab";
 import { DepositsTab } from "@/components/tables/DepositsTab";
 import { AccountMultiSelect } from "@/components/ui/account-multi-select";
@@ -376,6 +377,8 @@ export default function Dashboard() {
             previousLabel={`${formatShortDate(previousPeriod(since, until).since)}–${formatShortDate(previousPeriod(since, until).until)}`}
           />
         )}
+
+        <ForecastCard since={since} until={until} />
 
         <div className="mb-4 flex w-fit max-w-full flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
           {TABS.map((t) => (
