@@ -6,7 +6,7 @@ import {
   fetchAdLevelDailyInsights,
   fetchFundingSource,
 } from "@/lib/meta";
-import { pickFtd, pickResult } from "@/lib/results";
+import { pickFtd, pickLead, pickResult } from "@/lib/results";
 import { fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
 import { fetchAllDeposits } from "@/lib/payments";
 import { fetchExchangeRate } from "@/lib/fx";
@@ -147,6 +147,7 @@ export async function POST(request: Request) {
                 spend,
               );
               const { ftd, costPerFtd } = pickFtd(row.actions, row.cost_per_action_type, spend);
+              const { leads, costPerLead } = pickLead(row.actions, row.cost_per_action_type, spend);
               return {
                 ad_account_id: account.id,
                 date: row.date_start,
@@ -164,6 +165,8 @@ export async function POST(request: Request) {
                 cost_per_result: costPerResult,
                 ftd,
                 cost_per_ftd: costPerFtd,
+                leads,
+                cost_per_lead: costPerLead,
                 currency: account.currency,
                 synced_at: new Date().toISOString(),
               };

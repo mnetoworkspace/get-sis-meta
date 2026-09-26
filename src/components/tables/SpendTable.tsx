@@ -24,6 +24,8 @@ export interface SpendRow {
   cost_per_result: number | null;
   ftd?: number | null;
   cost_per_ftd?: number | null;
+  leads?: number | null;
+  cost_per_lead?: number | null;
   currency: string | null;
   ad_accounts?: {
     name: string;

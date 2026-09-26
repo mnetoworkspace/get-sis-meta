@@ -50,27 +50,27 @@ const TABS: { key: Tab; label: string; shortLabel?: string }[] = [
 
 function aggregateTotals(rows: SpendRow[]): PeriodTotals {
   let spend = 0;
-  let results = 0;
-  let hasResults = false;
   let ftd = 0;
   let hasFtd = false;
+  let leads = 0;
+  let hasLeads = false;
 
   for (const r of rows) {
     spend += Number(r.spend || 0);
-    if (r.results != null) {
-      results += r.results;
-      hasResults = true;
-    }
     if (r.ftd != null) {
       ftd += r.ftd;
       hasFtd = true;
+    }
+    if (r.leads != null) {
+      leads += r.leads;
+      hasLeads = true;
     }
   }
 
   return {
     spend,
-    results: hasResults ? results : null,
-    costPerResult: hasResults && results > 0 ? spend / results : null,
+    leads: hasLeads ? leads : null,
+    costPerLead: hasLeads && leads > 0 ? spend / leads : null,
     ftd: hasFtd ? ftd : null,
     costPerFtd: hasFtd && ftd > 0 ? spend / ftd : null,
   };

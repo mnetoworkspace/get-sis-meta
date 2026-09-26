@@ -5,8 +5,8 @@ import { formatCurrency, formatNumber } from "@/lib/format";
 
 export interface PeriodTotals {
   spend: number;
-  results: number | null;
-  costPerResult: number | null;
+  leads: number | null;
+  costPerLead: number | null;
   ftd: number | null;
   costPerFtd: number | null;
 }
@@ -53,16 +53,16 @@ export function StatsSummary({ current, previous, currency, previousLabel }: Pro
       previous: previous.spend,
     },
     {
-      label: "Resultados",
-      value: current.results != null ? formatNumber(current.results) : "-",
-      current: current.results,
-      previous: previous.results,
+      label: "Cadastro",
+      value: current.leads != null ? formatNumber(current.leads) : "-",
+      current: current.leads,
+      previous: previous.leads,
     },
     {
-      label: "Custo/Resultado",
-      value: current.costPerResult != null ? formatCurrency(current.costPerResult, currency) : "-",
-      current: current.costPerResult,
-      previous: previous.costPerResult,
+      label: "Custo/Cadastro",
+      value: current.costPerLead != null ? formatCurrency(current.costPerLead, currency) : "-",
+      current: current.costPerLead,
+      previous: previous.costPerLead,
     },
     {
       label: "FTD",

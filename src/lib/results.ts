@@ -12,8 +12,10 @@ const FTD_TYPES = [
   "offsite_conversion.fb_pixel_purchase",
 ];
 
+const LEAD_TYPES = ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"];
+
 const RESULT_PRIORITY: { types: string[]; label: string }[] = [
-  { types: ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"], label: "Lead" },
+  { types: LEAD_TYPES, label: "Lead" },
   { types: FTD_TYPES, label: "FTD" },
   {
     types: [
@@ -84,4 +86,33 @@ export function pickFtd(
   const costEntry = costPerActionType?.find((c) => FTD_TYPES.includes(c.action_type));
   const costPerFtd = costEntry ? Number(costEntry.value) || 0 : ftd > 0 ? spend / ftd : null;
   return { ftd, costPerFtd };
+}
+
+export interface LeadSummary {
+  leads: number | null;
+  costPerLead: number | null;
+}
+
+// Métrica dedicada de Lead ("Cadastro" no dashboard) — igual pickFtd(), não
+// depende de qual action_type o pickResult() escolheu como "resultado"
+// genérico. Usada nos cards gerais do topo, que a pedido do usuário mostram
+// só Lead (não misturam com visualização de página, clique no link etc.).
+export function pickLead(
+  actions: MetaAction[] | undefined,
+  costPerActionType: MetaAction[] | undefined,
+  spend: number,
+): LeadSummary {
+  if (!actions || actions.length === 0) {
+    return { leads: null, costPerLead: null };
+  }
+
+  const match = actions.find((a) => LEAD_TYPES.includes(a.action_type));
+  if (!match) {
+    return { leads: null, costPerLead: null };
+  }
+
+  const leads = Number(match.value) || 0;
+  const costEntry = costPerActionType?.find((c) => LEAD_TYPES.includes(c.action_type));
+  const costPerLead = costEntry ? Number(costEntry.value) || 0 : leads > 0 ? spend / leads : null;
+  return { leads, costPerLead };
 }
