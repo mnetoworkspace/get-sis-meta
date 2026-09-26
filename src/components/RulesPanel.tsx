@@ -15,6 +15,7 @@ import {
   emptyConditionGroup,
   isBudgetAction,
   isDuplicateAction,
+  isDeleteRejectedAction,
   type BudgetAdjustmentType,
   type DuplicateLimitWindow,
   type RuleAction,
@@ -143,7 +144,7 @@ export default function RulesPanel() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const validConditions = form.rules.conditions.filter((c) => c.value.trim() !== "");
-    if (validConditions.length === 0) {
+    if (!isDeleteRejectedAction(form.action) && validConditions.length === 0) {
       setMessage("Adicione pelo menos uma condição com valor preenchido.");
       return;
     }
@@ -160,6 +161,10 @@ export default function RulesPanel() {
         setMessage("Informe um limite de duplicações maior que zero.");
         return;
       }
+    }
+    if (isDeleteRejectedAction(form.action) && form.scope !== "ad") {
+      setMessage("Excluir rejeitado só é suportado no nível anúncio.");
+      return;
     }
     setBusy(true);
     setMessage(null);
@@ -393,6 +398,20 @@ export default function RulesPanel() {
               </div>
             )}
 
+            {isDeleteRejectedAction(form.action) && form.scope !== "ad" && (
+              <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-soft)] px-3 py-2 text-xs text-[var(--warning)]">
+                Excluir rejeitado só é suportado no nível Anúncio. Escolha esse nível.
+              </p>
+            )}
+
+            {isDeleteRejectedAction(form.action) && (
+              <p className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">
+                Ação irreversível — exclusão não tem &quot;desfazer&quot;, diferente de pausar. O gatilho é automático
+                (anúncio reprovado pela Meta), não usa as condições abaixo. Se o conjunto tiver outros
+                anúncios, exclui só o rejeitado; se for o único anúncio dele, exclui o conjunto inteiro.
+              </p>
+            )}
+
             {isBudgetAction(form.action) && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -428,12 +447,14 @@ export default function RulesPanel() {
               </div>
             )}
 
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                Condições
-              </label>
-              <ConditionGroupEditor group={form.rules} onChange={(rules) => setForm({ ...form, rules })} />
-            </div>
+            {!isDeleteRejectedAction(form.action) && (
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Condições
+                </label>
+                <ConditionGroupEditor group={form.rules} onChange={(rules) => setForm({ ...form, rules })} />
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -524,8 +545,17 @@ export default function RulesPanel() {
                         )
                       </>
                     )}{" "}
-                    {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
-                    {" "}({rule.time_window === "lifetime" ? "acumulado" : "hoje"}) · {bmScopeLabel(rule.bm_ids)}
+                    {isDeleteRejectedAction(rule.action) ? (
+                      <> {SCOPE_LABEL[rule.scope].toLowerCase()} quando reprovado pela Meta</>
+                    ) : (
+                      <>
+                        {" "}
+                        {SCOPE_LABEL[rule.scope].toLowerCase()} quando {describeGroup(rule.rules)}
+                        {" "}({rule.time_window === "lifetime" ? "acumulado" : "hoje"})
+                      </>
+                    )}
+                    {" · "}
+                    {bmScopeLabel(rule.bm_ids)}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">

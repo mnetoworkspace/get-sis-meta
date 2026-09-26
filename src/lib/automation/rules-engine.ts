@@ -7,6 +7,9 @@ import {
   fetchObjectBudget,
   setObjectBudget,
   duplicateAdSet,
+  fetchRejectedAds,
+  fetchAdSetAds,
+  deleteObject,
   objectIdFromInsight,
   objectNameFromInsight,
   type ObjectInsight,
@@ -16,7 +19,13 @@ import { pickFtd, pickResult } from "@/lib/results";
 import { fetchExchangeRate } from "@/lib/fx";
 import { sendPushToAll } from "@/lib/push/send";
 import { todayISO } from "@/lib/format";
-import { evaluateGroup, isBudgetAction, isDuplicateAction, type RuleMetrics } from "@/lib/automation/rule-types";
+import {
+  evaluateGroup,
+  isBudgetAction,
+  isDuplicateAction,
+  isDeleteRejectedAction,
+  type RuleMetrics,
+} from "@/lib/automation/rule-types";
 import { notificationDecision } from "@/lib/notifications/settings";
 import type { AdAccount, AutomationRule, MetaCredential } from "@/types/db";
 
@@ -242,6 +251,78 @@ async function handleDuplicateAction(
   return true;
 }
 
+// Anúncio rejeitado pela Meta geralmente nunca gastou nada, então não
+// aparece nos dados de insight — busca estrutural direto (fetchRejectedAds),
+// não passa pelo loop de linhas de insight nem pelo grupo de condições (o
+// gatilho é implícito). Se o conjunto tiver outros anúncios, exclui só o
+// rejeitado; se for o único, exclui o conjunto inteiro — dedupe é permanente
+// (sem sufixo de data), já que uma vez excluído o objeto não existe mais
+// pra reavaliar.
+async function handleDeleteRejectedAction(
+  rule: AutomationRule,
+  account: AdAccount,
+  token: string,
+  pushEnabled: boolean,
+  silent: boolean,
+): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+
+  let rejectedAds;
+  try {
+    rejectedAds = await fetchRejectedAds(account.id, token);
+  } catch (err) {
+    console.error(`[rules-engine] falha ao buscar anúncios rejeitados na conta ${account.id}:`, err);
+    return 0;
+  }
+
+  let actioned = 0;
+
+  for (const ad of rejectedAds) {
+    const dedupeKey = `RULE_DELETE_REJECTED:${rule.id}:${ad.id}`;
+    const { error: insertError } = await supabase.from("notifications").insert({
+      type: "rule_delete_rejected",
+      title: `Anúncio rejeitado · ${ad.name}`,
+      body: `Regra "${rule.name}".`,
+      metadata: { rule_id: rule.id, ad_id: ad.id, ad_name: ad.name, adset_id: ad.adset_id, ad_account_id: account.id },
+      dedupe_key: dedupeKey,
+    });
+    if (insertError) {
+      if (!isUniqueViolation(insertError)) {
+        console.error("[rules-engine] falha ao registrar notificação de anúncio rejeitado:", insertError);
+      }
+      continue; // já processado antes (dedupe) ou falha de registro — não age
+    }
+
+    try {
+      const adsInSet = await fetchAdSetAds(ad.adset_id, token);
+      let description: string;
+
+      if (adsInSet.length > 1) {
+        await deleteObject(ad.id, token);
+        description = `Anúncio "${ad.name}" excluído (rejeitado pela Meta) — outros anúncios seguem no conjunto.`;
+      } else {
+        await deleteObject(ad.adset_id, token);
+        description = `Conjunto excluído — o único anúncio dele ("${ad.name}") foi rejeitado pela Meta.`;
+      }
+
+      actioned += 1;
+
+      if (pushEnabled) {
+        await sendPushToAll({
+          title: "🗑️ Anúncio rejeitado — exclusão automática",
+          body: `${description} Regra "${rule.name}".`,
+          url: "/",
+          silent,
+        });
+      }
+    } catch (err) {
+      console.error(`[rules-engine] falha ao excluir anúncio/conjunto rejeitado ${ad.id}:`, err);
+    }
+  }
+
+  return actioned;
+}
+
 async function evaluateRule(
   rule: AutomationRule,
   account: AdAccount,
@@ -251,6 +332,12 @@ async function evaluateRule(
   const supabase = createSupabaseAdminClient();
   let actioned = 0;
   const { enabled: pushEnabled, silent } = await notificationDecision("rules");
+
+  // Não usa insights nem o grupo de condições — o gatilho (anúncio
+  // rejeitado) vem de uma busca estrutural própria.
+  if (isDeleteRejectedAction(rule.action)) {
+    return handleDeleteRejectedAction(rule, account, token, pushEnabled, silent);
+  }
 
   let rows: ObjectInsight[];
   if (rule.time_window === "lifetime") {

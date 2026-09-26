@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const SCOPES = new Set(["campaign", "adset", "ad"]);
-const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget", "duplicate"]);
+const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget", "duplicate", "delete_rejected"]);
 const BUDGET_ACTIONS = new Set(["increase_budget", "decrease_budget"]);
 const BUDGET_TYPES = new Set(["fixed", "percentage"]);
 const DUPLICATE_WINDOWS = new Set(["minute", "hour", "day"]);
@@ -62,11 +62,19 @@ export async function PATCH(request: Request, { params }: RouteContext<"/api/aut
       update.duplicate_limit_count = null;
       update.duplicate_limit_window = null;
     }
+
+    if (action === "delete_rejected") {
+      const finalScope = scope !== undefined && SCOPES.has(scope) ? scope : undefined;
+      if (finalScope !== "ad") {
+        return NextResponse.json({ error: "excluir rejeitado só é suportado no nível anúncio" }, { status: 400 });
+      }
+      update.rules = { operator: "AND", conditions: [] };
+    }
   }
   if (time_window !== undefined) update.time_window = time_window === "lifetime" ? "lifetime" : "today";
   if (bm_ids !== undefined) update.bm_ids = Array.isArray(bm_ids) ? bm_ids : [];
   if (is_active !== undefined) update.is_active = Boolean(is_active);
-  if (rules !== undefined) update.rules = rules;
+  if (rules !== undefined && update.rules === undefined) update.rules = rules;
   update.updated_at = new Date().toISOString();
 
   const supabase = createSupabaseAdminClient();

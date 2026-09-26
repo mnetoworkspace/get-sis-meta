@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const SCOPES = new Set(["campaign", "adset", "ad"]);
-const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget", "duplicate"]);
+const ACTIONS = new Set(["pause", "activate", "increase_budget", "decrease_budget", "duplicate", "delete_rejected"]);
 const BUDGET_ACTIONS = new Set(["increase_budget", "decrease_budget"]);
 const BUDGET_TYPES = new Set(["fixed", "percentage"]);
 const DUPLICATE_WINDOWS = new Set(["minute", "hour", "day"]);
@@ -43,11 +43,17 @@ export async function POST(request: Request) {
   if (!name) {
     return NextResponse.json({ error: "name é obrigatório" }, { status: 400 });
   }
-  if (!rules || !Array.isArray(rules.conditions) || rules.conditions.length === 0) {
-    return NextResponse.json({ error: "é preciso pelo menos uma condição" }, { status: 400 });
-  }
 
   const resolvedAction = ACTIONS.has(action) ? action : "pause";
+
+  // "delete_rejected" tem gatilho implícito (anúncio reprovado pela Meta) —
+  // não precisa de condição nenhuma.
+  if (resolvedAction !== "delete_rejected") {
+    if (!rules || !Array.isArray(rules.conditions) || rules.conditions.length === 0) {
+      return NextResponse.json({ error: "é preciso pelo menos uma condição" }, { status: 400 });
+    }
+  }
+
   if (BUDGET_ACTIONS.has(resolvedAction)) {
     if (!BUDGET_TYPES.has(budget_adjustment_type) || Number(budget_adjustment_value) <= 0) {
       return NextResponse.json(
@@ -67,6 +73,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "informe a janela do limite (minuto, hora ou dia)" }, { status: 400 });
     }
   }
+  if (resolvedAction === "delete_rejected" && scope !== "ad") {
+    return NextResponse.json({ error: "excluir rejeitado só é suportado no nível anúncio" }, { status: 400 });
+  }
 
   const supabase = createSupabaseAdminClient();
 
@@ -75,7 +84,7 @@ export async function POST(request: Request) {
     scope: SCOPES.has(scope) ? scope : "adset",
     action: resolvedAction,
     time_window: time_window === "lifetime" ? "lifetime" : "today",
-    rules,
+    rules: resolvedAction === "delete_rejected" ? { operator: "AND", conditions: [] } : rules,
     budget_adjustment_type: BUDGET_ACTIONS.has(resolvedAction) ? budget_adjustment_type : null,
     budget_adjustment_value: BUDGET_ACTIONS.has(resolvedAction) ? Number(budget_adjustment_value) : null,
     duplicate_limit_count: resolvedAction === "duplicate" ? Number(duplicate_limit_count) : null,

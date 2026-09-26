@@ -35,7 +35,7 @@ export const OPERATOR_OPTIONS: { value: RuleOperator; label: string }[] = [
   { value: "eq", label: "= igual a" },
 ];
 
-export type RuleAction = "pause" | "activate" | "increase_budget" | "decrease_budget" | "duplicate";
+export type RuleAction = "pause" | "activate" | "increase_budget" | "decrease_budget" | "duplicate" | "delete_rejected";
 export type BudgetAdjustmentType = "fixed" | "percentage";
 export type DuplicateLimitWindow = "minute" | "hour" | "day";
 
@@ -45,6 +45,7 @@ export const ACTION_OPTIONS: { value: RuleAction; label: string }[] = [
   { value: "increase_budget", label: "Aumentar orçamento" },
   { value: "decrease_budget", label: "Diminuir orçamento" },
   { value: "duplicate", label: "Duplicar conjunto de anúncios" },
+  { value: "delete_rejected", label: "Excluir anúncio/conjunto rejeitado" },
 ];
 
 export const DUPLICATE_WINDOW_OPTIONS: { value: DuplicateLimitWindow; label: string }[] = [
@@ -63,6 +64,12 @@ export function isBudgetAction(action: RuleAction): boolean {
 
 export function isDuplicateAction(action: RuleAction): boolean {
   return action === "duplicate";
+}
+
+// O gatilho é implícito (anúncio reprovado pela Meta) — não usa o grupo de
+// condições, que fica escondido no formulário pra essa ação.
+export function isDeleteRejectedAction(action: RuleAction): boolean {
+  return action === "delete_rejected";
 }
 
 export function fieldLabel(field: RuleField): string {

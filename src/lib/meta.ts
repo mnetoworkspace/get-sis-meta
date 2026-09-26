@@ -57,6 +57,27 @@ async function graphPost<T>(
   return json as T;
 }
 
+async function graphDelete<T>(
+  path: string,
+  params: Record<string, string>,
+): Promise<T> {
+  const url = new URL(`${GRAPH_BASE}${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+
+  const res = await fetch(url.toString(), { method: "DELETE" });
+  const json = await res.json();
+
+  if (!res.ok) {
+    const message =
+      json?.error?.message || `Erro ao chamar Meta Graph API (${res.status})`;
+    throw new MetaApiError(message, res.status, json);
+  }
+
+  return json as T;
+}
+
 async function graphGetAllPages<T>(
   path: string,
   params: Record<string, string>,
@@ -636,4 +657,33 @@ export async function fetchActiveAdSetsWithBudget(adAccountId: string, token: st
     access_token: token,
     limit: "200",
   });
+}
+
+// --- Exclusão de anúncio rejeitado (ação "delete_rejected" das regras) ---
+// Anúncio rejeitado pela Meta (revisão de política) geralmente nunca
+// gastou nada — não aparece nos dados de insight que o resto do motor de
+// regras usa, por isso precisa de uma busca estrutural própria, direto
+// pela lista de anúncios da conta filtrada por status.
+
+export interface RejectedAd {
+  id: string;
+  name: string;
+  adset_id: string;
+  effective_status: string;
+}
+
+export async function fetchRejectedAds(adAccountId: string, token: string): Promise<RejectedAd[]> {
+  return graphGetAllPages<RejectedAd>(`/${adAccountId}/ads`, {
+    fields: "id,name,adset_id,effective_status",
+    filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["DISAPPROVED"] }]),
+    access_token: token,
+    limit: "200",
+  });
+}
+
+// Funciona pra campanha, conjunto ou anúncio — mesmo node de delete nos
+// três casos, só muda o ID. Irreversível (diferente de pausar): não dá
+// pra "reativar" um objeto excluído pela API depois.
+export async function deleteObject(objectId: string, token: string): Promise<void> {
+  await graphDelete<{ success: boolean }>(`/${objectId}`, { access_token: token });
 }
