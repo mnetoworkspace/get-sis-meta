@@ -159,10 +159,28 @@ export default function Dashboard() {
 
     async function fetchPeriod(s: string, u: string) {
       const params = new URLSearchParams({ since: s, until: u, ...filterParam });
-      const res = await fetch(`/api/spend/overview?${params.toString()}`);
-      const json = await res.json();
-      const rows: SpendRow[] = json.data || [];
-      return { totals: aggregateTotals(rows), currency: rows[0]?.currency ?? null };
+      const [spendRes, depositsRes] = await Promise.all([
+        fetch(`/api/spend/overview?${params.toString()}`),
+        fetch(`/api/deposits/summary?since=${s}&until=${u}`),
+      ]);
+      const spendJson = await spendRes.json();
+      const depositsJson = await depositsRes.json();
+      const rows: SpendRow[] = spendJson.data || [];
+      const totals = aggregateTotals(rows);
+
+      // FTD e Custo/FTD do topo usam o número REAL do backoffice de
+      // depósitos (reconciliado por is_ftd), não o pixel da Meta — a Meta
+      // sub-conta por perda de atribuição (iOS, ad blocker, cross-device
+      // etc.). O backoffice não sabe de qual BM/conta veio cada depósito,
+      // então esse número é sempre o total real do negócio no período,
+      // independente do filtro de BM/conta selecionado — só o gasto
+      // (numerador) respeita o filtro.
+      const depositsData: { ftdCount: number }[] = depositsJson.data || [];
+      const realFtd = depositsData.reduce((sum, d) => sum + (d.ftdCount || 0), 0);
+      totals.ftd = depositsData.length > 0 ? realFtd : null;
+      totals.costPerFtd = realFtd > 0 ? totals.spend / realFtd : null;
+
+      return { totals, currency: rows[0]?.currency ?? null };
     }
 
     const [curr, prevTotals] = await Promise.all([

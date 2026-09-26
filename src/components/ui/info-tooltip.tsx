@@ -38,7 +38,7 @@ export function InfoTooltip({ children, className }: Props) {
         <HelpCircle size={11} />
       </button>
       {open && (
-        <div className="absolute left-0 top-6 z-30 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface-strong)] p-3 text-xs leading-relaxed text-[var(--text-muted)] shadow-xl animate-fade-in sm:w-80">
+        <div className="absolute left-0 top-6 z-30 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface-strong)] p-3 text-xs font-normal normal-case leading-relaxed tracking-normal text-[var(--text-muted)] shadow-xl animate-fade-in sm:w-80">
           {children}
         </div>
       )}

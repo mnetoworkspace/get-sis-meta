@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 export interface PeriodTotals {
   spend: number;
@@ -69,12 +70,14 @@ export function StatsSummary({ current, previous, currency, previousLabel }: Pro
       value: current.ftd != null ? formatNumber(current.ftd) : "-",
       current: current.ftd,
       previous: previous.ftd,
+      info: "Número real de depósitos FTD do backoffice, não o pixel da Meta — a Meta costuma sub-contar por perda de atribuição (iOS, ad blocker, cross-device). Não filtra por BM/conta: o backoffice não sabe de qual anúncio veio cada depósito, então é sempre o total real do negócio no período.",
     },
     {
       label: "Custo/FTD",
       value: current.costPerFtd != null ? formatCurrency(current.costPerFtd, currency) : "-",
       current: current.costPerFtd,
       previous: previous.costPerFtd,
+      info: "Gasto (já filtrado, se houver) ÷ FTD real do backoffice — não o custo/FTD que a Meta reporta.",
     },
   ];
 
@@ -82,7 +85,10 @@ export function StatsSummary({ current, previous, currency, previousLabel }: Pro
     <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {cards.map((c) => (
         <div key={c.label} className="stat-card">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">{c.label}</p>
+          <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            {c.label}
+            {"info" in c && c.info && <InfoTooltip>{c.info}</InfoTooltip>}
+          </p>
           <p className="mt-1.5 text-xl font-semibold text-[var(--text)]">{c.value}</p>
           <div className="mt-1.5 flex items-center gap-1.5">
             <Delta current={c.current} previous={c.previous} />
