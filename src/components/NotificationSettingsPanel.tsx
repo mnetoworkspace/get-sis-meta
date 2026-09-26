@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface NotificationSettings {
   deposit_enabled: boolean;
@@ -94,7 +95,14 @@ export default function NotificationSettingsPanel() {
         <div className="page-shell max-w-3xl flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
-            <h1 className="text-lg font-semibold text-[var(--text)]">Notificações</h1>
+            <h1 className="flex items-center gap-1.5 text-lg font-semibold text-[var(--text)]">
+              Notificações
+              <InfoTooltip>
+                Escolha quais tipos de notificação push você quer receber, e se cada uma toca o som padrão do
+                aparelho ou fica silenciosa. O Web Push não permite um som customizado por tipo — só
+                silenciosa ou o som padrão.
+              </InfoTooltip>
+            </h1>
           </div>
           <div className="flex items-center gap-2">
             <Link
@@ -115,12 +123,6 @@ export default function NotificationSettingsPanel() {
             {message}
           </div>
         )}
-
-        <p className="text-xs text-[var(--text-muted)]">
-          Escolha quais tipos de notificação push você quer receber, e se cada uma toca o som padrão do
-          aparelho ou fica silenciosa. O Web Push não permite um som customizado por tipo — só
-          silenciosa ou o som padrão.
-        </p>
 
         {!settings ? (
           <p className="text-sm text-[var(--text-muted)]">Carregando...</p>

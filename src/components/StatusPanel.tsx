@@ -6,6 +6,7 @@ import { ArrowLeft, PlayCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { QuickDateRange } from "@/components/ui/quick-date-range";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { daysAgoISO, formatCurrency, todayISO } from "@/lib/format";
 
 interface StatusAccount {
@@ -144,10 +145,13 @@ export default function StatusPanel() {
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
         <div className="flex flex-col gap-3 soft-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-[var(--text-muted)]">
-            Status verificado direto na Meta pela checagem automática (a cada 5 minutos) — BM inteira e cada
-            conta individualmente. Uma BM com problema geralmente derruba todas as contas dela de uma vez.
-          </p>
+          <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span>Status das contas e BMs</span>
+            <InfoTooltip>
+              Status verificado direto na Meta pela checagem automática (a cada 5 minutos) — BM inteira e cada
+              conta individualmente. Uma BM com problema geralmente derruba todas as contas dela de uma vez.
+            </InfoTooltip>
+          </div>
           <button
             onClick={runCheckNow}
             disabled={checking}

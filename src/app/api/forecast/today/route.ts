@@ -116,8 +116,16 @@ export async function GET() {
           ? Math.round((recentHours.reduce((sum, r) => sum + Number(r.spend || 0), 0) / recentHours.length) * 100)
           : 0;
 
-      const headroomCents = Math.max(0, ceilingCents - spendTodayCents);
-      const projectedRemainingCents = Math.min(recentAvgCentsPerHour * hoursRemaining, headroomCents);
+      // O teto só soma objetos com orçamento DIÁRIO — campanhas com orçamento
+      // vitalício não entram nele, mas o gasto de hoje (spendTodayCents) é o
+      // gasto real da conta inteira, incluindo essas campanhas. Se elas já
+      // gastaram mais do que o teto "diário" sozinho, o teto deixa de ser um
+      // limite real pra essa conta — nesse caso não faz sentido capar a
+      // projeção por ele (senão a projeção fica presa abaixo do que já foi
+      // gasto de verdade), então a extrapolação segue sem teto.
+      const headroomCents = ceilingCents - spendTodayCents;
+      const projectedRemainingCents =
+        headroomCents > 0 ? Math.min(recentAvgCentsPerHour * hoursRemaining, headroomCents) : recentAvgCentsPerHour * hoursRemaining;
       const projectionCents = spendTodayCents + Math.max(0, projectedRemainingCents);
 
       return {

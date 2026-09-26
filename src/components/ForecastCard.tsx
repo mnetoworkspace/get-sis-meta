@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { formatCurrency, todayISO } from "@/lib/format";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface Props {
   since: string;
@@ -54,6 +55,11 @@ export function ForecastCard({ since, until }: Props) {
         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
           Previsão de gasto hoje
         </p>
+        <InfoTooltip>
+          Teto = soma dos orçamentos diários de campanhas/conjuntos ativos, em contas com pagamento ativo.
+          Projeção = gasto de hoje + estimativa das horas restantes com base no ritmo das últimas horas —
+          não é garantia, a Meta pode acelerar ou desacelerar a entrega.
+        </InfoTooltip>
       </div>
 
       {!data ? (
@@ -95,12 +101,6 @@ export function ForecastCard({ since, until }: Props) {
           Falha ao checar {data.errors.length} conta(s) — número pode estar subestimado.
         </p>
       )}
-
-      <p className="mt-2 text-[11px] text-[var(--text-muted)]">
-        Teto = soma dos orçamentos diários de campanhas/conjuntos ativos, em contas com pagamento ativo. Projeção =
-        gasto de hoje + estimativa das horas restantes com base no ritmo das últimas horas — não é garantia, a Meta
-        pode acelerar ou desacelerar a entrega.
-      </p>
     </div>
   );
 }

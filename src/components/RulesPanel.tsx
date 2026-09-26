@@ -6,6 +6,7 @@ import { ArrowLeft, Check, Pencil, PlayCircle, Trash2, X, Zap } from "lucide-rea
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { ConditionGroupEditor } from "@/components/automation/condition-group-editor";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   ACTION_OPTIONS,
   DUPLICATE_WINDOW_OPTIONS,
@@ -248,12 +249,15 @@ export default function RulesPanel() {
         {message && <div className="soft-panel px-4 py-2 text-sm text-[var(--text)]">{message}</div>}
 
         <div className="flex flex-col gap-3 soft-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-[var(--text-muted)]">
-            Cada regra escolhe um nível (campanha, conjunto ou anúncio), uma ou mais condições (gasto,
-            FTD, custo/FTD, resultados, custo/resultado) e uma ação (pausar ou ativar). A checagem roda
-            sozinha no ciclo automático do sistema (a cada 5 minutos por padrão), mas dá pra forçar uma
-            checagem na hora sem esperar.
-          </p>
+          <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span>Regras de automação</span>
+            <InfoTooltip>
+              Cada regra escolhe um nível (campanha, conjunto ou anúncio), uma ou mais condições (gasto,
+              FTD, custo/FTD, resultados, custo/resultado) e uma ação (pausar, ativar, ajustar orçamento ou
+              duplicar). A checagem roda sozinha no ciclo automático do sistema (a cada 5 minutos por
+              padrão), mas dá pra forçar uma checagem na hora sem esperar.
+            </InfoTooltip>
+          </div>
           <button
             onClick={runCheckNow}
             disabled={checking}
