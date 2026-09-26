@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, PlayCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
+import { QuickDateRange } from "@/components/ui/quick-date-range";
+import { daysAgoISO, formatCurrency, todayISO } from "@/lib/format";
 
 interface StatusAccount {
   id: string;
@@ -12,6 +14,8 @@ interface StatusAccount {
   status: string | null;
   is_active: boolean;
   currency: string | null;
+  funding_source: string | null;
+  spend: number;
 }
 
 // Cópia local do mapa de src/lib/meta.ts — esse arquivo é client-side e
@@ -73,13 +77,16 @@ export default function StatusPanel() {
   const [bms, setBms] = useState<StatusBm[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [since, setSince] = useState(daysAgoISO(30));
+  const [until, setUntil] = useState(todayISO());
 
   useEffect(() => {
-    fetch("/api/status")
+    const params = new URLSearchParams({ since, until });
+    fetch(`/api/status?${params.toString()}`)
       .then((r) => r.json())
       .then((json) => setBms(json.data))
       .catch(() => setMessage("Falha ao carregar status."));
-  }, []);
+  }, [since, until]);
 
   async function runCheckNow() {
     setChecking(true);
@@ -89,7 +96,8 @@ export default function StatusPanel() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Falha ao verificar");
       setMessage("Verificação concluída.");
-      const statusRes = await fetch("/api/status");
+      const params = new URLSearchParams({ since, until });
+      const statusRes = await fetch(`/api/status?${params.toString()}`);
       const statusJson = await statusRes.json();
       if (statusRes.ok) setBms(statusJson.data);
     } catch (err) {
@@ -103,6 +111,13 @@ export default function StatusPanel() {
   const problemAccounts =
     bms?.reduce((sum, bm) => sum + bm.ad_accounts.filter((a) => a.status && a.status !== "ACTIVE").length, 0) ?? 0;
   const problemBms = bms?.filter((bm) => bm.meta_status === "ERROR").length ?? 0;
+  const spendByCurrency = new Map<string, number>();
+  for (const bm of bms ?? []) {
+    for (const acc of bm.ad_accounts) {
+      const currency = acc.currency || "—";
+      spendByCurrency.set(currency, (spendByCurrency.get(currency) || 0) + acc.spend);
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -143,8 +158,10 @@ export default function StatusPanel() {
           </button>
         </div>
 
+        <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
+
         {bms && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div className="card p-4">
               <p className="text-xs text-[var(--text-muted)]">BMs cadastradas</p>
               <p className="text-2xl font-semibold text-[var(--text)]">{bms.length}</p>
@@ -154,6 +171,18 @@ export default function StatusPanel() {
               <p className="text-xs text-[var(--text-muted)]">Contas de anúncio</p>
               <p className="text-2xl font-semibold text-[var(--text)]">{totalAccounts}</p>
               {problemAccounts > 0 && <p className="mt-1 text-xs text-[var(--danger)]">{problemAccounts} fora do ativo</p>}
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-[var(--text-muted)]">Gasto no período</p>
+              {spendByCurrency.size === 0 ? (
+                <p className="text-2xl font-semibold text-[var(--text)]">—</p>
+              ) : (
+                Array.from(spendByCurrency.entries()).map(([currency, amount]) => (
+                  <p key={currency} className="text-lg font-semibold text-[var(--text)]">
+                    {formatCurrency(amount, currency === "—" ? undefined : currency)}
+                  </p>
+                ))
+              )}
             </div>
             <div className="card p-4">
               <p className="text-xs text-[var(--text-muted)]">Última verificação</p>
@@ -192,10 +221,15 @@ export default function StatusPanel() {
                   {bm.ad_accounts.map((account) => {
                     const description = account.status ? STATUS_DESCRIPTIONS[account.status] : null;
                     return (
-                      <div key={account.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                      <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                         <span className="text-[var(--text)]">
                           {account.name}
                           {!account.is_active && <span className="ml-2 text-xs text-[var(--text-muted)]">(inativa no painel)</span>}
+                          <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
+                            {formatCurrency(account.spend, account.currency ?? undefined)} no período
+                            {" · "}
+                            {account.funding_source || "sem cartão cadastrado"}
+                          </span>
                           {description && <span className="mt-0.5 block text-xs text-[var(--danger)]">{description}</span>}
                         </span>
                         <AccountBadge account={account} />
