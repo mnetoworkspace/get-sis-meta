@@ -270,7 +270,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
+      <header className="relative z-40 border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
         <div className="page-shell flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={36} height={36} className="rounded-lg" />
