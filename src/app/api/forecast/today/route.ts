@@ -16,16 +16,35 @@ interface AccountForecast {
   ad_account_name: string;
   currency: string | null;
   ceiling_cents: number;
+  ceiling_lifetime_rateio_cents: number;
   spend_today_cents: number;
   projection_cents: number;
-  lifetime_only_objects: number;
+  lifetime_rateio_objects: number;
+  lifetime_no_end_date_objects: number;
+}
+
+// Rateio simples do orçamento vitalício: valor total dividido pelos dias
+// que faltam até o fim da campanha (ex: R$ 15.000 até daqui 15 dias = R$
+// 1.000/dia). É uma aproximação grosseira, pedida explicitamente pelo
+// usuário — a Meta pode gastar mais ou menos que isso em um dia específico
+// (ela tem o próprio algoritmo de pacing), então isso é só uma média, não
+// um teto real como o orçamento diário é.
+function impliedDailyLifetimeCents(lifetimeBudgetCents: number, stopTime: string | null | undefined): number | null {
+  if (!stopTime) return null;
+  const stop = new Date(stopTime).getTime();
+  if (Number.isNaN(stop)) return null;
+  const now = Date.now();
+  const daysRemaining = Math.max(1, Math.ceil((stop - now) / 86_400_000));
+  return lifetimeBudgetCents / daysRemaining;
 }
 
 // Previsão de gasto do dia, com dois números:
 // - "teto": soma dos orçamentos diários de campanhas/conjuntos ATIVOS, em
 //   contas com status ACTIVE de verdade (uma conta com falha de pagamento
 //   ou desabilitada não gasta nada, mesmo que a campanha dentro dela
-//   apareça como ativa — não entra na soma).
+//   apareça como ativa — não entra na soma) + o rateio de campanhas com
+//   orçamento vitalício (valor total ÷ dias restantes até o fim), que só
+//   entra quando a campanha tem data de término definida.
 // - "projeção": gasto já feito hoje + estimativa do que falta, baseada no
 //   ritmo real de gasto das últimas horas de HOJE (não um histórico de
 //   dias) — assim uma campanha recém-ativada não infla a projeção, porque
@@ -82,17 +101,39 @@ export async function GET() {
       const campaignIdsWithOwnBudget = new Set(campaigns.filter((c) => c.daily_budget != null).map((c) => c.id));
 
       let ceilingCents = 0;
-      let lifetimeOnlyObjects = 0;
+      let ceilingLifetimeRateioCents = 0;
+      let lifetimeRateioObjects = 0;
+      let lifetimeNoEndDateObjects = 0;
 
       for (const c of campaigns) {
-        if (c.daily_budget != null) ceilingCents += Number(c.daily_budget);
-        else if (c.lifetime_budget != null) lifetimeOnlyObjects += 1;
+        if (c.daily_budget != null) {
+          ceilingCents += Number(c.daily_budget);
+        } else if (c.lifetime_budget != null) {
+          const rateio = impliedDailyLifetimeCents(Number(c.lifetime_budget), c.stop_time);
+          if (rateio != null) {
+            ceilingLifetimeRateioCents += rateio;
+            lifetimeRateioObjects += 1;
+          } else {
+            lifetimeNoEndDateObjects += 1;
+          }
+        }
       }
       for (const a of adsets) {
         if (campaignIdsWithOwnBudget.has(a.campaign_id)) continue; // já contado na campanha (CBO)
-        if (a.daily_budget != null) ceilingCents += Number(a.daily_budget);
-        else if (a.lifetime_budget != null) lifetimeOnlyObjects += 1;
+        if (a.daily_budget != null) {
+          ceilingCents += Number(a.daily_budget);
+        } else if (a.lifetime_budget != null) {
+          const rateio = impliedDailyLifetimeCents(Number(a.lifetime_budget), a.stop_time);
+          if (rateio != null) {
+            ceilingLifetimeRateioCents += rateio;
+            lifetimeRateioObjects += 1;
+          } else {
+            lifetimeNoEndDateObjects += 1;
+          }
+        }
       }
+
+      ceilingCents += ceilingLifetimeRateioCents;
 
       const { data: hourlyRows } = await supabase
         .from("insights_account_hourly")
@@ -116,13 +157,13 @@ export async function GET() {
           ? Math.round((recentHours.reduce((sum, r) => sum + Number(r.spend || 0), 0) / recentHours.length) * 100)
           : 0;
 
-      // O teto só soma objetos com orçamento DIÁRIO — campanhas com orçamento
-      // vitalício não entram nele, mas o gasto de hoje (spendTodayCents) é o
-      // gasto real da conta inteira, incluindo essas campanhas. Se elas já
-      // gastaram mais do que o teto "diário" sozinho, o teto deixa de ser um
-      // limite real pra essa conta — nesse caso não faz sentido capar a
-      // projeção por ele (senão a projeção fica presa abaixo do que já foi
-      // gasto de verdade), então a extrapolação segue sem teto.
+      // O teto soma orçamento diário + o rateio de orçamento vitalício
+      // (aproximação, não um teto real — a Meta pode gastar mais ou menos
+      // num dia específico). Campanha vitalícia SEM data de término não
+      // entra em nenhum dos dois (não dá pra ratear sem saber até quando).
+      // Se o gasto de hoje já passou do teto mesmo assim, o teto deixou de
+      // ser um limite real pra essa conta — nesse caso não faz sentido
+      // capar a projeção por ele, então a extrapolação segue sem teto.
       const headroomCents = ceilingCents - spendTodayCents;
       const projectedRemainingCents =
         headroomCents > 0 ? Math.min(recentAvgCentsPerHour * hoursRemaining, headroomCents) : recentAvgCentsPerHour * hoursRemaining;
@@ -133,9 +174,11 @@ export async function GET() {
         ad_account_name: account.name,
         currency: account.currency,
         ceiling_cents: ceilingCents,
+        ceiling_lifetime_rateio_cents: ceilingLifetimeRateioCents,
         spend_today_cents: spendTodayCents,
         projection_cents: projectionCents,
-        lifetime_only_objects: lifetimeOnlyObjects,
+        lifetime_rateio_objects: lifetimeRateioObjects,
+        lifetime_no_end_date_objects: lifetimeNoEndDateObjects,
       };
     }),
   );
@@ -144,20 +187,31 @@ export async function GET() {
 
   const byCurrency = new Map<
     string,
-    { ceiling_cents: number; spend_today_cents: number; projection_cents: number; lifetime_only_objects: number }
+    {
+      ceiling_cents: number;
+      ceiling_lifetime_rateio_cents: number;
+      spend_today_cents: number;
+      projection_cents: number;
+      lifetime_rateio_objects: number;
+      lifetime_no_end_date_objects: number;
+    }
   >();
   for (const r of perAccount) {
     const currency = r.currency || "—";
     const bucket = byCurrency.get(currency) || {
       ceiling_cents: 0,
+      ceiling_lifetime_rateio_cents: 0,
       spend_today_cents: 0,
       projection_cents: 0,
-      lifetime_only_objects: 0,
+      lifetime_rateio_objects: 0,
+      lifetime_no_end_date_objects: 0,
     };
     bucket.ceiling_cents += r.ceiling_cents;
+    bucket.ceiling_lifetime_rateio_cents += r.ceiling_lifetime_rateio_cents;
     bucket.spend_today_cents += r.spend_today_cents;
     bucket.projection_cents += r.projection_cents;
-    bucket.lifetime_only_objects += r.lifetime_only_objects;
+    bucket.lifetime_rateio_objects += r.lifetime_rateio_objects;
+    bucket.lifetime_no_end_date_objects += r.lifetime_no_end_date_objects;
     byCurrency.set(currency, bucket);
   }
 

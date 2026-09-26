@@ -12,9 +12,11 @@ interface Props {
 
 interface CurrencyTotals {
   ceiling_cents: number;
+  ceiling_lifetime_rateio_cents: number;
   spend_today_cents: number;
   projection_cents: number;
-  lifetime_only_objects: number;
+  lifetime_rateio_objects: number;
+  lifetime_no_end_date_objects: number;
 }
 
 interface ForecastResponse {
@@ -56,9 +58,11 @@ export function ForecastCard({ since, until }: Props) {
           Previsão de gasto hoje
         </p>
         <InfoTooltip>
-          Teto = soma dos orçamentos diários de campanhas/conjuntos ativos, em contas com pagamento ativo.
-          Projeção = gasto de hoje + estimativa das horas restantes com base no ritmo das últimas horas —
-          não é garantia, a Meta pode acelerar ou desacelerar a entrega.
+          Teto = orçamentos diários de campanhas/conjuntos ativos, em contas com pagamento ativo, + um
+          rateio do orçamento vitalício (valor total ÷ dias restantes até o fim da campanha — é uma média,
+          não um teto real, a Meta pode gastar mais ou menos num dia específico). Campanha vitalícia sem
+          data de término não entra em nada disso. Projeção = gasto de hoje + estimativa das horas
+          restantes com base no ritmo das últimas horas — também não é garantia.
         </InfoTooltip>
       </div>
 
@@ -75,6 +79,11 @@ export function ForecastCard({ since, until }: Props) {
                 <p className="text-lg font-semibold text-[var(--text)]">
                   {formatCurrency(t.ceiling_cents / 100, currency)}
                 </p>
+                {t.ceiling_lifetime_rateio_cents > 0 && (
+                  <p className="text-[10px] text-[var(--text-muted)]">
+                    inclui {formatCurrency(t.ceiling_lifetime_rateio_cents / 100, currency)} rateado de vitalício
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-[11px] text-[var(--text-muted)]">Projeção realista</p>
@@ -86,9 +95,16 @@ export function ForecastCard({ since, until }: Props) {
                 <p className="text-[11px] text-[var(--text-muted)]">Já gasto hoje</p>
                 <p className="text-sm text-[var(--text-muted)]">{formatCurrency(t.spend_today_cents / 100, currency)}</p>
               </div>
-              {t.lifetime_only_objects > 0 && (
+              {t.lifetime_rateio_objects > 0 && (
                 <p className="w-full text-[11px] text-[var(--text-muted)]">
-                  {t.lifetime_only_objects} campanha(s)/conjunto(s) usam orçamento vitalício e não entram nesse teto.
+                  {t.lifetime_rateio_objects} campanha(s)/conjunto(s) de orçamento vitalício entram via rateio
+                  (valor total ÷ dias restantes).
+                </p>
+              )}
+              {t.lifetime_no_end_date_objects > 0 && (
+                <p className="w-full text-[11px] text-[var(--text-muted)]">
+                  {t.lifetime_no_end_date_objects} campanha(s)/conjunto(s) de orçamento vitalício sem data de
+                  término não entram no teto (não dá pra ratear sem saber até quando).
                 </p>
               )}
             </div>

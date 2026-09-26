@@ -630,11 +630,12 @@ export interface ActiveCampaignBudget {
   daily_budget: string | null;
   lifetime_budget: string | null;
   effective_status: string;
+  stop_time?: string | null;
 }
 
 export async function fetchActiveCampaignsWithBudget(adAccountId: string, token: string): Promise<ActiveCampaignBudget[]> {
   return graphGetAllPages<ActiveCampaignBudget>(`/${adAccountId}/campaigns`, {
-    fields: "id,name,daily_budget,lifetime_budget,effective_status",
+    fields: "id,name,daily_budget,lifetime_budget,effective_status,stop_time",
     filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]),
     access_token: token,
     limit: "200",
@@ -648,11 +649,12 @@ export interface ActiveAdSetBudget {
   daily_budget: string | null;
   lifetime_budget: string | null;
   effective_status: string;
+  stop_time?: string | null;
 }
 
 export async function fetchActiveAdSetsWithBudget(adAccountId: string, token: string): Promise<ActiveAdSetBudget[]> {
   return graphGetAllPages<ActiveAdSetBudget>(`/${adAccountId}/adsets`, {
-    fields: "id,name,campaign_id,daily_budget,lifetime_budget,effective_status",
+    fields: "id,name,campaign_id,daily_budget,lifetime_budget,effective_status,stop_time",
     filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]),
     access_token: token,
     limit: "200",
