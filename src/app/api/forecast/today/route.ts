@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase";
+import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 import { fetchActiveAdSetsWithBudget, fetchActiveCampaignsWithBudget, MetaApiError } from "@/lib/meta";
 import { nowHourInBrazil, todayISO } from "@/lib/format";
 import type { AdAccount, MetaCredential } from "@/types/db";
@@ -49,17 +49,17 @@ function impliedDailyLifetimeCents(lifetimeBudgetCents: number, stopTime: string
 //   ritmo real de gasto das últimas horas de HOJE (não um histórico de
 //   dias) — assim uma campanha recém-ativada não infla a projeção, porque
 //   ela ainda não tem gasto recente que sustente uma extrapolação alta.
-//   Nunca ultrapassa o teto (não faz sentido prever mais do que o
-//   orçamento permite gastar).
-export async function GET() {
+//   O gasto realizado nunca é descartado por mudanças de status da conta.
+export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
+  const { searchParams } = new URL(request.url);
+  const bmId = searchParams.get("bm_id");
+  const accountIds = searchParams.get("ad_account_ids")?.split(",").filter(Boolean) ?? [];
 
-  const { data: accounts, error: accError } = await supabase
-    .from("ad_accounts")
-    .select("*")
-    .eq("is_active", true)
-    .eq("status", "ACTIVE")
-    .returns<AdAccount[]>();
+  let accountsQuery = supabase.from("ad_accounts").select("*");
+  if (bmId) accountsQuery = accountsQuery.eq("bm_id", bmId);
+  if (accountIds.length) accountsQuery = accountsQuery.in("id", accountIds);
+  const { data: accounts, error: accError } = await accountsQuery.returns<AdAccount[]>();
 
   if (accError || !accounts) {
     return NextResponse.json({ error: accError?.message ?? "falha ao carregar contas" }, { status: 500 });
@@ -77,28 +77,47 @@ export async function GET() {
 
   const today = todayISO();
   const currentHour = nowHourInBrazil();
-  const hoursRemaining = Math.max(0, 24 - currentHour);
+  const now = new Date();
+  const hoursRemaining = Math.max(0, 24 - currentHour - now.getUTCMinutes() / 60 - now.getUTCSeconds() / 3600);
+  let dailyRows: { ad_account_id: string; spend: number }[];
+  try {
+    dailyRows = await fetchAllRows((from, to) => supabase
+      .from("insights_account_daily")
+      .select("ad_account_id, spend")
+      .eq("date", today)
+      .order("ad_account_id")
+      .range(from, to));
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Falha ao carregar gasto diário" }, { status: 500 });
+  }
+  const spendByAccount = new Map(dailyRows.map((r) => [r.ad_account_id, Math.round(Number(r.spend) * 100)]));
 
   const errors: string[] = [];
 
   const results = await Promise.all(
     accounts.map(async (account): Promise<AccountForecast | null> => {
       const token = tokenByBm.get(account.bm_id);
-      if (!token) return null;
+      const spendTodayCents = spendByAccount.get(account.id) ?? 0;
+      const canSpend = account.is_active && account.status === "ACTIVE";
 
-      let campaigns, adsets;
+      let campaigns: Awaited<ReturnType<typeof fetchActiveCampaignsWithBudget>> = [];
+      let adsets: Awaited<ReturnType<typeof fetchActiveAdSetsWithBudget>> = [];
+      let budgetKnown = !canSpend;
       try {
-        [campaigns, adsets] = await Promise.all([
-          fetchActiveCampaignsWithBudget(account.id, token),
-          fetchActiveAdSetsWithBudget(account.id, token),
-        ]);
+        if (canSpend) {
+          if (!token) throw new Error("Token da BM ausente");
+          [campaigns, adsets] = await Promise.all([
+            fetchActiveCampaignsWithBudget(account.id, token),
+            fetchActiveAdSetsWithBudget(account.id, token),
+          ]);
+          budgetKnown = true;
+        }
       } catch (err) {
         const message = err instanceof MetaApiError ? err.message : err instanceof Error ? err.message : "erro desconhecido";
         errors.push(`${account.name}: ${message}`);
-        return null;
       }
 
-      const campaignIdsWithOwnBudget = new Set(campaigns.filter((c) => c.daily_budget != null).map((c) => c.id));
+      const campaignIdsWithOwnBudget = new Set(campaigns.filter((c) => c.daily_budget != null || c.lifetime_budget != null).map((c) => c.id));
 
       let ceilingCents = 0;
       let ceilingLifetimeRateioCents = 0;
@@ -135,7 +154,7 @@ export async function GET() {
 
       ceilingCents += ceilingLifetimeRateioCents;
 
-      const { data: hourlyRows } = await supabase
+      const { data: hourlyRows, error: hourlyError } = await supabase
         .from("insights_account_hourly")
         .select("hour, spend")
         .eq("ad_account_id", account.id)
@@ -143,18 +162,15 @@ export async function GET() {
         .returns<HourlySpendRow[]>();
 
       const rows = hourlyRows ?? [];
-      const spendTodayCents = Math.round(rows.reduce((sum, r) => sum + Number(r.spend || 0), 0) * 100);
+      if (hourlyError) errors.push(`${account.name}: falha ao carregar gasto por hora`);
 
       // Ritmo recente: média das últimas horas já fechadas de hoje (até 3),
       // não um histórico de dias — uma campanha nova ainda não tem gasto
       // recente que sustente uma extrapolação alta.
-      const recentHours = rows
-        .filter((r) => r.hour < currentHour)
-        .sort((a, b) => b.hour - a.hour)
-        .slice(0, 3);
+      const recentHours = rows.filter((r) => r.hour >= Math.max(0, currentHour - 3) && r.hour < currentHour);
       const recentAvgCentsPerHour =
-        recentHours.length > 0
-          ? Math.round((recentHours.reduce((sum, r) => sum + Number(r.spend || 0), 0) / recentHours.length) * 100)
+        currentHour > 0
+          ? Math.round((recentHours.reduce((sum, r) => sum + Number(r.spend || 0), 0) / Math.min(3, currentHour)) * 100)
           : 0;
 
       // O teto soma orçamento diário + o rateio de orçamento vitalício
@@ -167,7 +183,8 @@ export async function GET() {
       const headroomCents = ceilingCents - spendTodayCents;
       const projectedRemainingCents =
         headroomCents > 0 ? Math.min(recentAvgCentsPerHour * hoursRemaining, headroomCents) : recentAvgCentsPerHour * hoursRemaining;
-      const projectionCents = spendTodayCents + Math.max(0, projectedRemainingCents);
+      const hasActiveObjects = !budgetKnown || campaigns.length > 0 || adsets.length > 0;
+      const projectionCents = spendTodayCents + (canSpend && hasActiveObjects ? Math.round(Math.max(0, projectedRemainingCents)) : 0);
 
       return {
         ad_account_id: account.id,

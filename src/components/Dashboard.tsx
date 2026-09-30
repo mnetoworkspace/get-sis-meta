@@ -94,6 +94,7 @@ export default function Dashboard() {
   const [detailedRows, setDetailedRows] = useState<DetailedRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncHadErrors, setSyncHadErrors] = useState(false);
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
@@ -284,6 +285,7 @@ export default function Dashboard() {
       setSyncHadErrors(true);
     } finally {
       setSyncing(false);
+      setForecastRefreshKey((key) => key + 1);
     }
   }
 
@@ -396,7 +398,14 @@ export default function Dashboard() {
           />
         )}
 
-        <ForecastCard since={since} until={until} />
+        <ForecastCard
+          key={`${tab}:${bmFilter}:${accountFilters.join(",")}:${forecastRefreshKey}`}
+          since={since}
+          until={until}
+          bmId={tab === "bm" ? bmFilter : undefined}
+          accountIds={tab !== "bm" ? accountFilters.join(",") : undefined}
+          refreshKey={forecastRefreshKey}
+        />
 
         <div className="mb-4 flex w-fit max-w-full flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
           {TABS.map((t) => (

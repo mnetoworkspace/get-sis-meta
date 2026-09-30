@@ -8,6 +8,9 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 interface Props {
   since: string;
   until: string;
+  bmId?: string;
+  accountIds?: string;
+  refreshKey: number;
 }
 
 interface CurrencyTotals {
@@ -28,23 +31,33 @@ interface ForecastResponse {
 // Só faz sentido "prever o gasto de hoje" quando o período selecionado é
 // hoje — em qualquer outro período (ontem, 30 dias...) esse número não
 // significa nada, então o card nem aparece.
-export function ForecastCard({ since, until }: Props) {
+export function ForecastCard({ since, until, bmId, accountIds, refreshKey }: Props) {
   const [data, setData] = useState<ForecastResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const isToday = since === todayISO() && until === todayISO();
 
   useEffect(() => {
     if (!isToday) return;
     let cancelled = false;
-    fetch("/api/forecast/today")
-      .then((r) => r.json())
-      .then((json) => {
-        if (!cancelled) setData(json);
+    const params = new URLSearchParams();
+    if (bmId) params.set("bm_id", bmId);
+    if (accountIds) params.set("ad_account_ids", accountIds);
+    fetch(`/api/forecast/today?${params}`)
+      .then(async (r) => {
+        const json = await r.json();
+        if (!r.ok) throw new Error(json.error || "Falha ao calcular previsão");
+        return json;
       })
-      .catch(() => {});
+      .then((json) => {
+        if (!cancelled) { setData(json); setError(null); }
+      })
+      .catch((err) => {
+        if (!cancelled) { setData(null); setError(err instanceof Error ? err.message : "Falha ao calcular previsão"); }
+      });
     return () => {
       cancelled = true;
     };
-  }, [isToday]);
+  }, [isToday, since, until, bmId, accountIds, refreshKey]);
 
   if (!isToday) return null;
 
@@ -61,15 +74,18 @@ export function ForecastCard({ since, until }: Props) {
           Teto = orçamentos diários de campanhas/conjuntos ativos, em contas com pagamento ativo, + um
           rateio do orçamento vitalício (valor total ÷ dias restantes até o fim da campanha — é uma média,
           não um teto real, a Meta pode gastar mais ou menos num dia específico). Campanha vitalícia sem
-          data de término não entra em nada disso. Projeção = gasto de hoje + estimativa das horas
-          restantes com base no ritmo das últimas horas — também não é garantia.
+          data de término não entra no teto. Projeção = gasto diário consolidado de todas as contas
+          selecionadas, inclusive as que ficaram inativas, + estimativa das horas restantes para
+          contas ativas, com base nas últimas três horas fechadas — também não é garantia.
         </InfoTooltip>
       </div>
 
-      {!data ? (
+      {error ? (
+        <p className="text-sm text-[var(--danger)]">{error}</p>
+      ) : !data ? (
         <p className="text-sm text-[var(--text-muted)]">Calculando...</p>
       ) : currencies.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)]">Nenhuma campanha ativa em conta ativa agora.</p>
+        <p className="text-sm text-[var(--text-muted)]">Nenhuma conta encontrada para os filtros selecionados.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {currencies.map(([currency, t]) => (
@@ -114,7 +130,7 @@ export function ForecastCard({ since, until }: Props) {
 
       {data && data.errors.length > 0 && (
         <p className="mt-2 text-[11px] text-[var(--danger)]">
-          Falha ao checar {data.errors.length} conta(s) — número pode estar subestimado.
+          Algumas consultas falharam — gasto diário preservado; orçamento e projeção podem estar incompletos.
         </p>
       )}
     </div>
