@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 import { fetchActiveAdSetsWithBudget, fetchActiveCampaignsWithBudget, MetaApiError } from "@/lib/meta";
 import { nowHourInBrazil, todayISO } from "@/lib/format";
+import { buildFxRateMap } from "@/lib/fx";
 import type { AdAccount, MetaCredential } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Falha ao carregar gasto diário" }, { status: 500 });
   }
   const spendByAccount = new Map(dailyRows.map((r) => [r.ad_account_id, Math.round(Number(r.spend) * 100)]));
+
+  // Cotação de contas em moeda != BRL (ex: BM com financeiro em USD),
+  // pra não somar teto/projeção de contas em dólar junto com contas em
+  // real como se fossem o mesmo número.
+  const { data: fxRows } = await supabase.from("fx_rates").select("base_currency, rate").eq("quote_currency", "BRL");
+  const fxRates = buildFxRateMap(fxRows || []);
 
   const errors: string[] = [];
 
@@ -186,14 +193,22 @@ export async function GET(request: Request) {
       const hasActiveObjects = !budgetKnown || campaigns.length > 0 || adsets.length > 0;
       const projectionCents = spendTodayCents + (canSpend && hasActiveObjects ? Math.round(Math.max(0, projectedRemainingCents)) : 0);
 
+      // Converte pra BRL só no final, depois de toda a matemática de teto e
+      // projeção ter rodado em cima dos valores nativos da conta — assim
+      // orçamento vitalício, ritmo das últimas horas etc. continuam
+      // coerentes entre si antes da conversão. Sem cotação ainda
+      // sincronizada, mantém a moeda nativa em vez de fingir que é BRL.
+      const fxRate = account.currency && account.currency !== "BRL" ? fxRates.get(account.currency) : null;
+      const toBRLCents = (cents: number) => (fxRate ? Math.round(cents * fxRate) : cents);
+
       return {
         ad_account_id: account.id,
         ad_account_name: account.name,
-        currency: account.currency,
-        ceiling_cents: ceilingCents,
-        ceiling_lifetime_rateio_cents: ceilingLifetimeRateioCents,
-        spend_today_cents: spendTodayCents,
-        projection_cents: projectionCents,
+        currency: fxRate ? "BRL" : account.currency,
+        ceiling_cents: toBRLCents(ceilingCents),
+        ceiling_lifetime_rateio_cents: toBRLCents(ceilingLifetimeRateioCents),
+        spend_today_cents: toBRLCents(spendTodayCents),
+        projection_cents: toBRLCents(projectionCents),
         lifetime_rateio_objects: lifetimeRateioObjects,
         lifetime_no_end_date_objects: lifetimeNoEndDateObjects,
       };

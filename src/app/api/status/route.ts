@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 import { daysAgoISO, todayISO } from "@/lib/format";
+import { buildFxRateMap, toBRL } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
 
@@ -49,17 +50,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
+  // Converte gasto de contas em moeda != BRL (ex: BM com financeiro em
+  // USD) pra BRL, pra o painel de status não misturar nem rotular errado
+  // valores de contas em moedas diferentes.
+  const { data: fxRows } = await supabase.from("fx_rates").select("base_currency, rate").eq("quote_currency", "BRL");
+  const fxRates = buildFxRateMap(fxRows || []);
+
   const spendByAccount = new Map<string, number>();
   for (const row of spendRows) {
-    spendByAccount.set(row.ad_account_id, (spendByAccount.get(row.ad_account_id) || 0) + Number(row.spend || 0));
+    const spendBrl = toBRL(Number(row.spend || 0), row.currency, fxRates) ?? 0;
+    spendByAccount.set(row.ad_account_id, (spendByAccount.get(row.ad_account_id) || 0) + spendBrl);
   }
 
   const enriched = (data || []).map((bm) => ({
     ...bm,
-    ad_accounts: (bm.ad_accounts as { id: string }[]).map((acc) => ({
-      ...acc,
-      spend: spendByAccount.get(acc.id) || 0,
-    })),
+    ad_accounts: (bm.ad_accounts as { id: string; currency: string | null }[]).map((acc) => {
+      const rate = acc.currency && acc.currency !== "BRL" ? fxRates.get(acc.currency) : null;
+      return {
+        ...acc,
+        currency: rate ? "BRL" : acc.currency,
+        spend: spendByAccount.get(acc.id) || 0,
+      };
+    }),
   }));
 
   return NextResponse.json({ data: enriched, since, until });

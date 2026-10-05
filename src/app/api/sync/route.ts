@@ -85,6 +85,11 @@ export async function POST(request: Request) {
   let accountsSynced = 0;
   let accountsFailed = 0;
   const errors: { ad_account_id: string; message: string }[] = [];
+  // Moedas de conta != BRL vistas nesta sync (ex: BM com financeiro em
+  // USD) — junta com as moedas de depósito mais abaixo pra buscar a
+  // cotação de todas de uma vez só.
+  const accountCurrencies = new Set<string>();
+  const depositCurrencies = new Set<string>();
 
   try {
     const { data: credentials, error: credError } = await supabase
@@ -105,6 +110,7 @@ export async function POST(request: Request) {
       if (accError) throw accError;
 
       for (const account of adAccounts || []) {
+        if (account.currency && account.currency !== "BRL") accountCurrencies.add(account.currency);
         try {
           const [accountDaily, adDaily, accountHourly, fundingSource] = await Promise.all([
             fetchAccountDailyInsights(
@@ -354,10 +360,22 @@ export async function POST(request: Request) {
         }
       }
 
-      // Cotação pra cada moeda de depósito != BRL, usada pra comparar com o
-      // gasto de anúncio (sempre em BRL) sem misturar os valores nativos.
-      const foreignCurrencies = [...new Set(deposits.map((d) => d.currency).filter((c) => c !== "BRL"))];
-      for (const currency of foreignCurrencies) {
+      for (const d of deposits) {
+        if (d.currency && d.currency !== "BRL") depositCurrencies.add(d.currency);
+      }
+    } catch (err) {
+      errors.push({ ad_account_id: "deposits", message: errorMessage(err) });
+    }
+
+    // Cotação pra cada moeda != BRL vista nesta sync — tanto de conta de
+    // anúncio (BM com financeiro em USD, por exemplo) quanto de depósito
+    // (ex: COP) — pra comparar tudo com o gasto de anúncio sem misturar
+    // valores nativos de moedas diferentes. Roda fora do try de depósitos
+    // pra não deixar de atualizar a cotação de conta só porque a sync de
+    // depósitos falhou.
+    try {
+      const currenciesToFetch = new Set([...accountCurrencies, ...depositCurrencies]);
+      for (const currency of currenciesToFetch) {
         const rate = await fetchExchangeRate(currency, "BRL");
         if (rate != null) {
           const { error } = await supabase
@@ -370,7 +388,7 @@ export async function POST(request: Request) {
         }
       }
     } catch (err) {
-      errors.push({ ad_account_id: "deposits", message: errorMessage(err) });
+      errors.push({ ad_account_id: "fx_rates", message: errorMessage(err) });
     }
 
     const status = accountsFailed === 0 ? "success" : accountsSynced === 0 ? "error" : "partial";

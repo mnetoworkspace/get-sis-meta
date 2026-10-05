@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase";
+import { buildFxRateMap, convertMoneyFieldsToBRL } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
 
@@ -32,5 +33,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  // Converte gasto de contas que não são BRL (ex: BM com financeiro em
+  // USD) pra BRL — mesma lógica de /api/spend/overview, pra não misturar
+  // moedas diferentes na coluna/total desta tabela.
+  const { data: fxRows } = await supabase.from("fx_rates").select("base_currency, rate").eq("quote_currency", "BRL");
+  const fxRates = buildFxRateMap(fxRows || []);
+  const converted = (data || []).map((row) => convertMoneyFieldsToBRL(row, fxRates));
+
+  return NextResponse.json({ data: converted });
 }
