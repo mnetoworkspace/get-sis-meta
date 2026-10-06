@@ -9,14 +9,14 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "Traffic RakeBet", body: event.data ? event.data.text() : "" };
+    data = { title: "Hotmart", body: event.data ? event.data.text() : "" };
   }
 
-  const title = data.title || "Traffic RakeBet";
+  const title = data.title || "Hotmart";
   const options = {
     body: data.body || "",
-    icon: "/logo-rakebet-icon.png",
-    badge: "/logo-rakebet-icon.png",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
     // Web Push não permite som customizado — só silenciosa (true) ou o som
     // padrão do aparelho (false/omitido).
     silent: data.silent === true,

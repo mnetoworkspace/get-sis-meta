@@ -53,9 +53,12 @@ async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): 
     if (isBootstrap) continue;
     if (!pushEnabled) continue;
 
+    // Sem "title" separado de propósito: o iOS já mostra o nome do app
+    // ("Hotmart", vem do manifest) como linha pequena acima da notificação
+    // — se a gente também mandasse title: "Hotmart" ficaria duplicado. Em
+    // vez disso a descrição vira o título, então ela que fica em negrito.
     await sendPushToAll({
-      title: "Hotmart",
-      body: `Venda Realizada: ${formatCurrency(d.amount, d.currency)}`,
+      title: `Venda Realizada: ${formatCurrency(d.amount, d.currency)}`,
       url: "/",
       silent,
     });
