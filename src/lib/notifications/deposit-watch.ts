@@ -34,8 +34,8 @@ async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): 
   for (const d of deposits) {
     const { error } = await supabase.from("notifications").insert({
       type: "deposit",
-      title: "Novo depósito",
-      body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
+      title: "Hotmart",
+      body: `Venda Realizada: ${formatCurrency(d.amount, d.currency)}`,
       metadata: { deposit_id: d.id, amount: d.amount, currency: d.currency },
       dedupe_key: `DEPOSIT:${d.id}`,
     });
@@ -54,8 +54,8 @@ async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): 
     if (!pushEnabled) continue;
 
     await sendPushToAll({
-      title: "💰 Novo depósito",
-      body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
+      title: "Hotmart",
+      body: `Venda Realizada: ${formatCurrency(d.amount, d.currency)}`,
       url: "/",
       silent,
     });

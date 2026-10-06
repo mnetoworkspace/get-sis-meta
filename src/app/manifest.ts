@@ -2,13 +2,13 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Traffic RakeBet",
-    short_name: "Traffic RakeBet",
-    description: "Painel de gastos de Meta Ads por BM e conta de anúncio",
+    name: "Hotmart",
+    short_name: "Hotmart",
+    description: "Hotmart",
     start_url: "/",
     display: "standalone",
-    background_color: "#131318",
-    theme_color: "#131318",
+    background_color: "#FF5400",
+    theme_color: "#FF5400",
     icons: [
       {
         src: "/icons/icon-192.png",
