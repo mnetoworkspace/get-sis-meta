@@ -14,12 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hotmart",
-  description: "Hotmart",
+  title: "Rakebet",
+  description: "Painel de gastos de Meta Ads por BM e conta de anúncio",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Hotmart",
+    title: "Rakebet",
   },
   other: {
     // Next só emite a tag padrão "mobile-web-app-capable" a partir de

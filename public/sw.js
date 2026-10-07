@@ -9,10 +9,10 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "Hotmart", body: event.data ? event.data.text() : "" };
+    data = { title: "Rakebet", body: event.data ? event.data.text() : "" };
   }
 
-  const title = data.title || "Hotmart";
+  const title = data.title || "Rakebet";
   const options = {
     body: data.body || "",
     icon: "/icons/icon-192.png",
