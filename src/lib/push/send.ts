@@ -20,10 +20,17 @@ interface PushPayload {
   title: string;
   body?: string;
   url?: string;
-  // Web Push não permite escolher um som customizado — só tocar o som
-  // padrão do aparelho (silent: false/omitido) ou não tocar nada
-  // (silent: true). Repassado pro service worker via public/sw.js.
+  // Web Push não permite escolher um som customizado pra notificação do
+  // SISTEMA — só tocar o som padrão do aparelho (silent: false/omitido)
+  // ou não tocar nada (silent: true). Repassado pro service worker via
+  // public/sw.js.
   silent?: boolean;
+  // Categoria da notificação (ex: "deposit") — o service worker repassa
+  // isso pra página via postMessage, que usa pra decidir se toca o som
+  // customizado (public/sounds/deposit.mp3). Isso só funciona com o app
+  // aberto; é diferente do "silent" acima, que é sobre a notificação do
+  // sistema operacional.
+  type?: string;
 }
 
 // Manda a mesma notificação pra todos os dispositivos inscritos (login único

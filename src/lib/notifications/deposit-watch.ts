@@ -58,6 +58,7 @@ async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): 
       body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
       url: "/",
       silent,
+      type: "deposit",
     });
   }
 }
