@@ -4,6 +4,20 @@
 // instalável (critério de "Add to Home Screen" em modo standalone).
 self.addEventListener("fetch", () => {});
 
+// Sem isso, um service worker novo fica "esperando" (estado waiting) até
+// TODAS as abas/janelas do app serem fechadas de vez — só então ele vira o
+// ativo. skipWaiting + clients.claim força a versão nova a assumir na hora,
+// na próxima vez que a página carregar o arquivo (ainda precisa de pelo
+// menos 1 recarregamento pra buscar esse sw.js novo, mas depois disso não
+// fica preso na versão antiga indefinidamente).
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // Precisa bater com SOUND_BY_TYPE em ServiceWorkerRegister.tsx — tipos de
 // notificação que têm som customizado tocando via página aberta. Só serve
 // pra decidir se silencia a notificação do SISTEMA quando tem aba aberta
