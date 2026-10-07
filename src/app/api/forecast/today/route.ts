@@ -3,6 +3,7 @@ import { createSupabaseAdminClient, fetchAllRows } from "@/lib/supabase";
 import { fetchActiveAdSetsWithBudget, fetchActiveCampaignsWithBudget, MetaApiError } from "@/lib/meta";
 import { nowHourInBrazil, todayISO } from "@/lib/format";
 import { buildFxRateMap } from "@/lib/fx";
+import { recentAvgCentsPerHour } from "@/lib/pacing";
 import type { AdAccount, MetaCredential } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -171,14 +172,7 @@ export async function GET(request: Request) {
       const rows = hourlyRows ?? [];
       if (hourlyError) errors.push(`${account.name}: falha ao carregar gasto por hora`);
 
-      // Ritmo recente: média das últimas horas já fechadas de hoje (até 3),
-      // não um histórico de dias — uma campanha nova ainda não tem gasto
-      // recente que sustente uma extrapolação alta.
-      const recentHours = rows.filter((r) => r.hour >= Math.max(0, currentHour - 3) && r.hour < currentHour);
-      const recentAvgCentsPerHour =
-        currentHour > 0
-          ? Math.round((recentHours.reduce((sum, r) => sum + Number(r.spend || 0), 0) / Math.min(3, currentHour)) * 100)
-          : 0;
+      const recentAvgCentsPerHourValue = recentAvgCentsPerHour(rows, currentHour);
 
       // O teto soma orçamento diário + o rateio de orçamento vitalício
       // (aproximação, não um teto real — a Meta pode gastar mais ou menos
@@ -189,7 +183,9 @@ export async function GET(request: Request) {
       // capar a projeção por ele, então a extrapolação segue sem teto.
       const headroomCents = ceilingCents - spendTodayCents;
       const projectedRemainingCents =
-        headroomCents > 0 ? Math.min(recentAvgCentsPerHour * hoursRemaining, headroomCents) : recentAvgCentsPerHour * hoursRemaining;
+        headroomCents > 0
+          ? Math.min(recentAvgCentsPerHourValue * hoursRemaining, headroomCents)
+          : recentAvgCentsPerHourValue * hoursRemaining;
       const hasActiveObjects = !budgetKnown || campaigns.length > 0 || adsets.length > 0;
       const projectionCents = spendTodayCents + (canSpend && hasActiveObjects ? Math.round(Math.max(0, projectedRemainingCents)) : 0);
 

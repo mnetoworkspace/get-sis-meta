@@ -5,6 +5,13 @@ import { CreditCard, RefreshCw } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 
+interface Depletion {
+  pace_cents_per_hour: number;
+  hours_until_empty: number | null;
+  estimated_empty_at: string | null;
+  already_empty: boolean;
+}
+
 interface Card {
   id: string;
   funding_source: string;
@@ -15,6 +22,7 @@ interface Card {
   current_balance_cents: number;
   spend_since_cents: number;
   accounts: string[];
+  depletion: Depletion;
 }
 
 interface Unregistered {
@@ -30,6 +38,35 @@ interface CardsResponse {
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR");
+}
+
+// Ritmo e previsão de zerar são uma extrapolação do gasto real das últimas
+// horas fechadas de hoje (ver estimateDepletion em /api/cards) — não é
+// garantia, só uma estimativa que acompanha o dia.
+function formatDepletion(d: Depletion, currency: string | null): string | null {
+  if (d.already_empty) return "saldo já esgotado";
+  if (d.hours_until_empty == null || d.estimated_empty_at == null) return null;
+
+  const paceLabel = `ritmo: ${formatCurrency(d.pace_cents_per_hour / 100, currency)}/h`;
+
+  if (d.hours_until_empty > 48) {
+    return `${paceLabel} · deve durar mais de 2 dias no ritmo atual`;
+  }
+
+  const target = new Date(d.estimated_empty_at);
+  const now = new Date();
+  const hh = String(target.getHours()).padStart(2, "0");
+  const mm = String(target.getMinutes()).padStart(2, "0");
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+
+  let when: string;
+  if (target.toDateString() === now.toDateString()) when = `hoje às ${hh}:${mm}`;
+  else if (target.toDateString() === tomorrow.toDateString()) when = `amanhã às ${hh}:${mm}`;
+  else when = `${target.toLocaleDateString("pt-BR")} às ${hh}:${mm}`;
+
+  return `${paceLabel} · deve zerar ${when}`;
 }
 
 function ReloadForm({
@@ -160,7 +197,9 @@ export default function CardsSection() {
           Saldo cadastrado manualmente (a Meta não expõe saldo de cartão via API) — funciona como uma
           carteira pré-paga: você informa o saldo quando recarrega, e o valor mostrado aqui vai
           descontando o gasto real sincronizado das contas que usam esse cartão, até a próxima recarga.
-          Um cartão pode ser usado por várias contas ao mesmo tempo.
+          Um cartão pode ser usado por várias contas ao mesmo tempo. &quot;Deve zerar às...&quot; é uma
+          previsão baseada no ritmo real de gasto das últimas horas fechadas de hoje, somado entre as
+          contas desse cartão — não é garantia, o ritmo pode mudar ao longo do dia.
         </InfoTooltip>
       </h2>
 
@@ -174,6 +213,7 @@ export default function CardsSection() {
             const isLow =
               card.low_balance_threshold_cents != null && card.current_balance_cents <= card.low_balance_threshold_cents;
             const isNegative = card.current_balance_cents < 0;
+            const depletionLabel = formatDepletion(card.depletion, card.currency);
             return (
               <div key={card.id} className="soft-panel px-3 py-2.5 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -194,6 +234,17 @@ export default function CardsSection() {
                       {formatCurrency(card.balance_cents / 100, card.currency)} · gastou{" "}
                       {formatCurrency(card.spend_since_cents / 100, card.currency)} desde então
                     </p>
+                    {depletionLabel && (
+                      <p
+                        className={`mt-0.5 text-[11px] ${
+                          card.depletion.already_empty || (card.depletion.hours_until_empty ?? 99) <= 6
+                            ? "text-[var(--danger)]"
+                            : "text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {depletionLabel}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">

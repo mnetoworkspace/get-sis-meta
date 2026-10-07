@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase";
-import { toBrazilDateHour } from "@/lib/format";
+import { nowHourInBrazil, todayISO, toBrazilDateHour } from "@/lib/format";
+import { recentAvgCentsPerHour } from "@/lib/pacing";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,57 @@ async function spendSinceCents(accountIds: string[], balanceSetAt: string): Prom
   return Math.round((hourlySum + dailySum) * 100);
 }
 
+interface DepletionEstimate {
+  pace_cents_per_hour: number;
+  hours_until_empty: number | null;
+  estimated_empty_at: string | null;
+  already_empty: boolean;
+}
+
+// Previsão de quando o saldo do cartão deve zerar: pega o ritmo real de
+// gasto das últimas horas fechadas de HOJE (mesma técnica da previsão de
+// gasto diário, ver lib/pacing.ts) somado entre todas as contas que usam
+// esse cartão, e projeta quantas horas o saldo atual aguenta nesse ritmo.
+// É só uma extrapolação do ritmo recente, não considera orçamento
+// configurado nem mudança de ritmo ao longo do dia — contas paradas ou sem
+// gasto nas últimas horas entram com ritmo zero (não é descartada, só não
+// empurra a previsão).
+async function estimateDepletion(accountIds: string[], currentBalanceCents: number, currentHour: number): Promise<DepletionEstimate> {
+  if (currentBalanceCents <= 0) {
+    return { pace_cents_per_hour: 0, hours_until_empty: null, estimated_empty_at: null, already_empty: true };
+  }
+  if (accountIds.length === 0) {
+    return { pace_cents_per_hour: 0, hours_until_empty: null, estimated_empty_at: null, already_empty: false };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: hourlyRows } = await supabase
+    .from("insights_account_hourly")
+    .select("hour, spend")
+    .in("ad_account_id", accountIds)
+    .eq("date", todayISO())
+    .returns<HourlyRow[]>();
+
+  // Soma hora a hora entre contas (não dá pra usar recentAvgCentsPerHour
+  // direto em cada conta e depois somar as médias — precisa agregar o
+  // gasto por hora primeiro pra não distorcer o ritmo combinado).
+  const spendByHour = new Map<number, number>();
+  for (const row of hourlyRows ?? []) {
+    spendByHour.set(row.hour, (spendByHour.get(row.hour) || 0) + Number(row.spend || 0));
+  }
+  const combinedRows = Array.from(spendByHour.entries()).map(([hour, spend]) => ({ hour, spend }));
+
+  const pace = recentAvgCentsPerHour(combinedRows, currentHour);
+  if (pace <= 0) {
+    return { pace_cents_per_hour: 0, hours_until_empty: null, estimated_empty_at: null, already_empty: false };
+  }
+
+  const hoursUntilEmpty = currentBalanceCents / pace;
+  const estimatedEmptyAt = new Date(Date.now() + hoursUntilEmpty * 3_600_000).toISOString();
+
+  return { pace_cents_per_hour: pace, hours_until_empty: hoursUntilEmpty, estimated_empty_at: estimatedEmptyAt, already_empty: false };
+}
+
 export async function GET() {
   const supabase = createSupabaseAdminClient();
 
@@ -89,18 +141,21 @@ export async function GET() {
     accountsByFundingSource.set(acc.funding_source, list);
   }
 
+  const currentHour = nowHourInBrazil();
+
   const cardsWithBalance = await Promise.all(
     cards.map(async (card) => {
       const relatedAccounts = accountsByFundingSource.get(card.funding_source) ?? [];
-      const spendSince = await spendSinceCents(
-        relatedAccounts.map((a) => a.id),
-        card.balance_set_at,
-      );
+      const accountIds = relatedAccounts.map((a) => a.id);
+      const spendSince = await spendSinceCents(accountIds, card.balance_set_at);
+      const currentBalanceCents = card.balance_cents - spendSince;
+      const depletion = await estimateDepletion(accountIds, currentBalanceCents, currentHour);
       return {
         ...card,
-        current_balance_cents: card.balance_cents - spendSince,
+        current_balance_cents: currentBalanceCents,
         spend_since_cents: spendSince,
         accounts: relatedAccounts.map((a) => a.name),
+        depletion,
       };
     }),
   );
