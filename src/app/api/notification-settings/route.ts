@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase";
-import { getNotificationSettings } from "@/lib/notifications/settings";
+import { getNotificationSettings, getOrCreateWebhookToken, regenerateWebhookToken } from "@/lib/notifications/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +13,26 @@ const BOOLEAN_FIELDS = [
   "rules_silent",
   "account_status_enabled",
   "account_status_silent",
+  "webhook_enabled",
+  "webhook_silent",
 ] as const;
 
-export async function GET() {
-  const settings = await getNotificationSettings();
-  return NextResponse.json({ data: settings });
+export async function GET(request: Request) {
+  const [settings, token] = await Promise.all([getNotificationSettings(), getOrCreateWebhookToken()]);
+  const webhookUrl = new URL(`/api/webhooks/notify/${token}`, request.url).toString();
+  return NextResponse.json({ data: settings, webhook_url: webhookUrl });
 }
 
 export async function PATCH(request: Request) {
   const body = await request.json();
+
+  // Regenerar o token é uma ação à parte (não um campo booleano) — troca
+  // a URL inteira do webhook, invalidando a antiga na hora.
+  if (body.regenerate_webhook_token === true) {
+    const token = await regenerateWebhookToken();
+    const webhookUrl = new URL(`/api/webhooks/notify/${token}`, request.url).toString();
+    return NextResponse.json({ ok: true, webhook_url: webhookUrl });
+  }
 
   const update: Record<string, boolean> = {};
   for (const field of BOOLEAN_FIELDS) {

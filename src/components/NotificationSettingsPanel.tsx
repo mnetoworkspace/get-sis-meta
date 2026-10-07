@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -16,6 +16,8 @@ interface NotificationSettings {
   rules_silent: boolean;
   account_status_enabled: boolean;
   account_status_silent: boolean;
+  webhook_enabled: boolean;
+  webhook_silent: boolean;
 }
 
 interface CategoryConfig {
@@ -51,19 +53,68 @@ const CATEGORIES: CategoryConfig[] = [
     description:
       "Avisa quando uma conta sai do status ativo (bloqueada, em revisão, fechada) ou volta a ficar ativa — e quando uma Business Manager inteira para de responder (possível bloqueio da BM).",
   },
+  {
+    enabledKey: "webhook_enabled",
+    silentKey: "webhook_silent",
+    title: "Webhook personalizado",
+    description: "Avisa quando algum serviço externo chama a URL do webhook abaixo (ver seção embaixo).",
+  },
 ];
 
 export default function NotificationSettingsPanel() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
     fetch("/api/notification-settings")
       .then((r) => r.json())
-      .then((json) => setSettings(json.data))
+      .then((json) => {
+        setSettings(json.data);
+        setWebhookUrl(json.webhook_url || null);
+      })
       .catch(() => setMessage("Falha ao carregar configurações."));
+  }
+
+  useEffect(() => {
+    load();
   }, []);
+
+  async function copyWebhookUrl() {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setMessage("Não foi possível copiar — selecione e copie manualmente.");
+    }
+  }
+
+  async function regenerateWebhook() {
+    if (!confirm("Gerar uma nova URL de webhook? A URL antiga para de funcionar na hora — qualquer integração já configurada com ela vai parar de disparar notificação.")) {
+      return;
+    }
+    setRegenerating(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/notification-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate_webhook_token: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Falha ao gerar nova URL");
+      setWebhookUrl(json.webhook_url);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Falha ao gerar nova URL");
+    } finally {
+      setRegenerating(false);
+    }
+  }
 
   async function updateField(field: keyof NotificationSettings, value: boolean) {
     if (!settings) return;
@@ -160,6 +211,47 @@ export default function NotificationSettingsPanel() {
                 </div>
               );
             })}
+          </section>
+        )}
+
+        {settings && (
+          <section className="card p-5">
+            <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-[var(--text)]">
+              URL do webhook
+              <InfoTooltip>
+                Qualquer sistema externo (Zapier, Make, um automation qualquer) que fizer POST nessa URL com
+                {" "}
+                <code>{"{\"title\": \"...\", \"text\": \"...\"}"}</code> (ou só <code>text</code>/<code>body</code>
+                /<code>message</code>) cria uma notificação aqui no app e dispara o push — funciona como
+                substituto de um serviço tipo Pushcut, só que direto no sistema. O token na URL é a única
+                proteção dela: trate como senha.
+              </InfoTooltip>
+            </h2>
+            <p className="mb-3 text-xs text-[var(--text-muted)]">
+              Cole essa URL em qualquer serviço que precise te avisar de algo — vira notificação igual as
+              outras, já respeitando o liga/desliga e o modo silencioso de &quot;Webhook personalizado&quot; acima.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="flex-1 min-w-[200px] truncate rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text)]">
+                {webhookUrl || "gerando..."}
+              </code>
+              <button
+                onClick={copyWebhookUrl}
+                disabled={!webhookUrl}
+                className="btn-secondary flex items-center gap-1 py-1.5 px-3 text-xs"
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                {copied ? "Copiado" : "Copiar"}
+              </button>
+              <button
+                onClick={regenerateWebhook}
+                disabled={regenerating || !webhookUrl}
+                className="btn-secondary flex items-center gap-1 py-1.5 px-3 text-xs"
+              >
+                <RefreshCw size={12} />
+                {regenerating ? "Gerando..." : "Gerar nova URL"}
+              </button>
+            </div>
           </section>
         )}
       </main>

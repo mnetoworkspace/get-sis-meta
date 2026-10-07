@@ -4,7 +4,11 @@ import { AUTH_COOKIE, AUTH_TOKEN } from "@/lib/auth";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/login" || pathname.startsWith("/api/auth/")) {
+  // /api/webhooks/notify/<token> precisa ficar acessível sem cookie de
+  // sessão — quem chama é um serviço externo (Zapier, Make etc.), não o
+  // navegador logado. A segurança dessa rota é o token no próprio path,
+  // validado dentro do handler — não depende desta exceção pra isso.
+  if (pathname === "/login" || pathname.startsWith("/api/auth/") || pathname.startsWith("/api/webhooks/notify/")) {
     return NextResponse.next();
   }
 
