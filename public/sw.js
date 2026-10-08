@@ -30,10 +30,10 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "Rakebet", body: event.data ? event.data.text() : "" };
+    data = { title: "Rake Hub", body: event.data ? event.data.text() : "" };
   }
 
-  const title = data.title || "Rakebet";
+  const title = data.title || "Rake Hub";
   const requestedSilent = data.silent === true;
 
   event.waitUntil(

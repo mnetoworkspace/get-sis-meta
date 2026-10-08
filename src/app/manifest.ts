@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Rakebet",
-    short_name: "Rakebet",
+    name: "Rake Hub",
+    short_name: "Rake Hub",
     description: "Painel de gastos de Meta Ads por BM e conta de anúncio",
     start_url: "/",
     display: "standalone",

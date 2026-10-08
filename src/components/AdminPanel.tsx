@@ -210,7 +210,7 @@ export default function AdminPanel() {
       <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/80 backdrop-blur">
         <div className="page-shell max-w-3xl flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <Image src="/logo-rakebet-icon.png" alt="Rakebet" width={32} height={32} className="rounded-lg" />
+            <Image src="/logo-rakebet-icon.png" alt="Rake Hub" width={32} height={32} className="rounded-lg" />
             <h1 className="text-lg font-semibold text-[var(--text)]">Gerenciar BMs e contas</h1>
           </div>
           <div className="flex items-center gap-2">
