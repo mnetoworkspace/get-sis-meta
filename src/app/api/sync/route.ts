@@ -4,7 +4,9 @@ import {
   fetchAccountDailyInsights,
   fetchAccountHourlyInsights,
   fetchAdLevelDailyInsights,
+  fetchClientAdAccounts,
   fetchFundingSource,
+  fetchOwnedAdAccounts,
 } from "@/lib/meta";
 import { pickFtd, pickLead, pickResult } from "@/lib/results";
 import { fetchHourlyTraffic, getFathomSiteId } from "@/lib/fathom";
@@ -108,6 +110,40 @@ export async function POST(request: Request) {
         .returns<AdAccount[]>();
 
       if (accError) throw accError;
+
+      // Confere a moeda de cada conta contra a Meta (fonte da verdade)
+      // antes de sincronizar — currency só é setada no cadastro (import ou
+      // o formulário manual do Admin, que é texto livre) e nunca mais era
+      // conferida depois. Se ficar errada (digitação manual, por exemplo)
+      // todo gasto da conta é convertido pra BRL com a cotação errada pra
+      // sempre, sem nada acusar o erro. Duas chamadas por BM, não por
+      // conta — barato. Se a checagem falhar, segue com o que já está
+      // salvo em vez de travar a sync inteira.
+      try {
+        const [owned, client] = await Promise.all([
+          fetchOwnedAdAccounts(credential.bm_id, credential.system_user_token).catch(() => []),
+          fetchClientAdAccounts(credential.bm_id, credential.system_user_token).catch(() => []),
+        ]);
+        const realCurrencyById = new Map<string, string>();
+        for (const acc of [...owned, ...client]) realCurrencyById.set(acc.id, acc.currency);
+
+        for (const account of adAccounts || []) {
+          const realCurrency = realCurrencyById.get(account.id);
+          if (realCurrency && realCurrency !== account.currency) {
+            const { error: currencyFixError } = await supabase
+              .from("ad_accounts")
+              .update({ currency: realCurrency })
+              .eq("id", account.id);
+            if (currencyFixError) {
+              errors.push({ ad_account_id: account.id, message: `falha ao corrigir moeda: ${currencyFixError.message}` });
+            } else {
+              account.currency = realCurrency; // usa o valor corrigido pro resto desta sync
+            }
+          }
+        }
+      } catch (err) {
+        errors.push({ ad_account_id: "currency_check", message: errorMessage(err) });
+      }
 
       for (const account of adAccounts || []) {
         if (account.currency && account.currency !== "BRL") accountCurrencies.add(account.currency);
