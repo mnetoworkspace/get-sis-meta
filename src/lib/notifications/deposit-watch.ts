@@ -8,14 +8,6 @@ const SILENCE_MINUTES = Number(process.env.DEPOSIT_SILENCE_MINUTES || 60);
 // o agendador atrasar ou o container reiniciar entre uma checagem e outra.
 const LOOKBACK_HOURS = 6;
 
-function formatCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(amount);
-  } catch {
-    return `${amount} ${currency}`;
-  }
-}
-
 function isUniqueViolation(err: { code?: string } | null): boolean {
   return err?.code === "23505";
 }
@@ -27,50 +19,40 @@ function isRealDeposit(d: DepositRow): boolean {
   return d.status === "COMPLETED" && !d.test_user;
 }
 
-async function notifyNewDeposits(deposits: DepositRow[], isBootstrap: boolean): Promise<void> {
-  const supabase = createSupabaseAdminClient();
-  const { enabled: pushEnabled, silent } = await notificationDecision("deposit");
+const DEPOSIT_WEBHOOK_PATTERN = /dep[oó]sito/i;
 
-  for (const d of deposits) {
-    const { error } = await supabase.from("notifications").insert({
-      type: "deposit",
-      title: "Novo depósito",
-      body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
-      metadata: { deposit_id: d.id, amount: d.amount, currency: d.currency },
-      dedupe_key: `DEPOSIT:${d.id}`,
-    });
+// O webhook em tempo real (ver /api/webhooks/notify/[token]) hoje é o canal
+// mais rápido pra saber que caiu depósito — mais rápido que o polling da API
+// antiga, que só roda a cada DEPOSIT_CHECK_INTERVAL_MINUTES. Sem olhar pra
+// ele aqui, o alerta de silêncio dispara falso positivo (API atrasada)
+// mesmo com depósito reconhecido chegando certinho pelo webhook.
+async function latestWebhookDepositAt(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("notifications")
+    .select("created_at, title, body")
+    .eq("type", "webhook")
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-    if (error) {
-      if (!isUniqueViolation(error)) {
-        console.error("[deposit-watch] falha ao registrar notificação de depósito:", error);
-      }
-      continue;
-    }
-
-    // Na primeira checagem depois de ativar (sem histórico de notificações),
-    // só registra o que já existe pra dedupe — não dispara um push por cada
-    // depósito das últimas horas de uma vez.
-    if (isBootstrap) continue;
-    if (!pushEnabled) continue;
-
-    await sendPushToAll({
-      title: "💰 Novo depósito",
-      body: `${formatCurrency(d.amount, d.currency)} via ${d.payment_method_name || d.payment_method}`,
-      url: "/",
-      silent,
-      type: "deposit",
-    });
-  }
+  const match = (data || []).find(
+    (row) => DEPOSIT_WEBHOOK_PATTERN.test(row.title ?? "") || DEPOSIT_WEBHOOK_PATTERN.test(row.body ?? ""),
+  );
+  return match?.created_at ?? null;
 }
 
 async function checkSilence(mostRecentKnownDepositAt: string | null): Promise<void> {
   const supabase = createSupabaseAdminClient();
   const now = Date.now();
 
-  let referenceTime: Date;
-  if (mostRecentKnownDepositAt) {
-    referenceTime = new Date(mostRecentKnownDepositAt);
-  } else {
+  const candidates: Date[] = [];
+  if (mostRecentKnownDepositAt) candidates.push(new Date(mostRecentKnownDepositAt));
+
+  const webhookAt = await latestWebhookDepositAt(supabase);
+  if (webhookAt) candidates.push(new Date(webhookAt));
+
+  if (candidates.length === 0) {
     const { data: lastRow } = await supabase
       .from("deposits")
       .select("created_at")
@@ -80,8 +62,10 @@ async function checkSilence(mostRecentKnownDepositAt: string | null): Promise<vo
       .limit(1)
       .maybeSingle();
     if (!lastRow) return; // Sem nenhum depósito conhecido ainda — nada a comparar.
-    referenceTime = new Date(lastRow.created_at);
+    candidates.push(new Date(lastRow.created_at));
   }
+
+  const referenceTime = candidates.reduce((latest, d) => (d > latest ? d : latest));
 
   const silentMinutes = Math.floor((now - referenceTime.getTime()) / 60000);
   if (silentMinutes < SILENCE_MINUTES) return;
@@ -119,15 +103,12 @@ async function checkSilence(mostRecentKnownDepositAt: string | null): Promise<vo
   });
 }
 
+// Não notifica mais "Novo depósito" por aqui — isso agora é feito em tempo
+// real pelo webhook (ver /api/webhooks/notify/[token]), e notificar de novo
+// aqui a cada ciclo duplicava o aviso (um pelo webhook, outro minutos depois
+// por esse polling). Essa checagem continua rodando só internamente, como
+// rede de segurança pro alerta de silêncio (ver checkSilence).
 export async function checkDeposits(): Promise<void> {
-  const supabase = createSupabaseAdminClient();
-
-  const { count } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "deposit");
-  const isBootstrap = (count ?? 0) === 0;
-
   const now = new Date();
   const from = new Date(now.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
@@ -140,8 +121,6 @@ export async function checkDeposits(): Promise<void> {
   }
 
   const real = deposits.filter(isRealDeposit);
-
-  await notifyNewDeposits(real, isBootstrap);
 
   const mostRecent = real.reduce<string | null>(
     (max, d) => (max === null || d.created_at > max ? d.created_at : max),

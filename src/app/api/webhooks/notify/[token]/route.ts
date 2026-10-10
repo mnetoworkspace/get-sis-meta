@@ -66,7 +66,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     return NextResponse.json({ error: "falha ao registrar notificação" }, { status: 500 });
   }
 
-  const { enabled, silent } = await notificationDecision("webhook");
+  // Hoje o depósito em tempo real chega só por aqui (ver deposit-watch.ts,
+  // que não dispara mais push de depósito pelo polling antigo) — então uma
+  // chamada com cara de depósito respeita o toggle "Novo depósito", não o
+  // "Webhook personalizado" genérico.
+  const isDeposit = /dep[oó]sito/i.test(notifTitle) || /dep[oó]sito/i.test(notifBody ?? "");
+  const { enabled, silent } = await notificationDecision(isDeposit ? "deposit" : "webhook");
   if (enabled) {
     await sendPushToAll({ title: notifTitle, body: notifBody ?? undefined, url: "/", silent });
   }
