@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Pause, Play, RefreshCw, X } from "lucide-react";
+import { Copy, Pause, Play, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatCurrency, todayISO } from "@/lib/format";
 import { applySort, nextSortState, usePersistedSort } from "@/lib/sort";
@@ -148,6 +148,53 @@ function StatusFilterChips({
   );
 }
 
+// Barra que aparece quando tem algo marcado — ações em massa reaproveitam
+// exatamente as mesmas rotas dos botões de linha, só chamadas uma vez por
+// item selecionado (sequencial, pra não estourar o rate limit da Meta).
+function BulkActionBar({
+  count,
+  busy,
+  onPause,
+  onActivate,
+  onDuplicate,
+  onDelete,
+  onClear,
+}: {
+  count: number;
+  busy: boolean;
+  onPause: () => void;
+  onActivate: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  if (count === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent-soft)] px-4 py-2.5">
+      <span className="text-sm font-medium text-[var(--text)]">{count} selecionado(s)</span>
+      <button onClick={onPause} disabled={busy} className="btn-secondary py-1 px-3 text-xs disabled:opacity-50">
+        Pausar
+      </button>
+      <button onClick={onActivate} disabled={busy} className="btn-secondary py-1 px-3 text-xs disabled:opacity-50">
+        Ativar
+      </button>
+      <button onClick={onDuplicate} disabled={busy} className="btn-secondary py-1 px-3 text-xs disabled:opacity-50">
+        Duplicar
+      </button>
+      <button
+        onClick={onDelete}
+        disabled={busy}
+        className="rounded-xl border border-[var(--danger)]/40 bg-[var(--danger-soft)] px-3 py-1 text-xs font-medium text-[var(--danger)] hover:bg-[var(--danger)]/20 disabled:opacity-50"
+      >
+        Excluir
+      </button>
+      <button onClick={onClear} disabled={busy} className="ml-auto text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">
+        limpar seleção
+      </button>
+    </div>
+  );
+}
+
 type CampaignColKey = "status" | "objective" | "budget" | "spend" | "purchases" | "cpa";
 const CAMPAIGN_COLUMNS: ColumnDef<CampaignColKey>[] = [
   { key: "status", label: "Status", defaultOn: true },
@@ -198,6 +245,7 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
 
   const [ads, setAds] = useState<AdRow[] | null>(null);
   const [loadingAds, setLoadingAds] = useState(false);
+  const [checkedAds, setCheckedAds] = useState<Set<string>>(new Set());
   const [statusFilterAds, setStatusFilterAds] = useState<Set<string>>(new Set());
 
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -269,6 +317,7 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     setAds(null);
     setCheckedCampaigns(new Set());
     setCheckedAdsets(new Set());
+    setCheckedAds(new Set());
     setStatusFilterCampaigns(new Set());
     setStatusFilterAdsets(new Set());
     setStatusFilterAds(new Set());
@@ -378,6 +427,155 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     } finally {
       setBusyIds((prev) => { const s = new Set(prev); s.delete(adset.id); return s; });
     }
+  }
+
+  async function duplicateAd(ad: AdRow) {
+    if (!confirm(`Duplicar o anúncio "${ad.name}" e já deixar ativo?`)) return;
+    setBusyIds((prev) => new Set(prev).add(ad.id));
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/meta/ads/${ad.id}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Falha ao duplicar anúncio");
+      setMessage("Anúncio duplicado com sucesso.");
+      loadAds();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Falha ao duplicar anúncio");
+    } finally {
+      setBusyIds((prev) => { const s = new Set(prev); s.delete(ad.id); return s; });
+    }
+  }
+
+  async function deleteOne(id: string, label: string, onSuccess: () => void) {
+    if (!confirm(`Excluir ${label}? É permanente — a Meta não deixa reverter, só duplicar pra criar um novo.`)) return;
+    setBusyIds((prev) => new Set(prev).add(id));
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/meta/objects/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Falha ao excluir");
+      onSuccess();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Falha ao excluir");
+    } finally {
+      setBusyIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  }
+
+  // Executor genérico de ação em massa — roda sequencial (não Promise.all)
+  // pra não estourar o limite de chamadas por conta da Meta (já vimos
+  // "User request limit reached" nessa API durante investigação). Um item
+  // falhando não trava os outros.
+  async function runBulk(ids: string[], action: (id: string) => Promise<void>): Promise<{ ok: number; fail: number }> {
+    setBusyIds((prev) => { const s = new Set(prev); ids.forEach((id) => s.add(id)); return s; });
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await action(id);
+        ok++;
+      } catch {
+        // segue pro próximo — o resumo final informa quantos falharam
+      }
+    }
+    setBusyIds((prev) => { const s = new Set(prev); ids.forEach((id) => s.delete(id)); return s; });
+    return { ok, fail: ids.length - ok };
+  }
+
+  function levelMeta(l: Level) {
+    if (l === "campaigns") return { checked: checkedCampaigns, setChecked: setCheckedCampaigns, rows: campaigns, label: "campanha(s)" };
+    if (l === "adsets") return { checked: checkedAdsets, setChecked: setCheckedAdsets, rows: adsets, label: "conjunto(s)" };
+    return { checked: checkedAds, setChecked: setCheckedAds, rows: ads, label: "anúncio(s)" };
+  }
+
+  function applyLocalStatus(l: Level, id: string, status: string) {
+    if (l === "campaigns") setCampaignStatus(id, status);
+    else if (l === "adsets") setAdsetStatus(id, status);
+    else setAdStatus(id, status);
+  }
+
+  async function bulkSetStatus(l: Level, status: "ACTIVE" | "PAUSED") {
+    const { checked, rows, label } = levelMeta(l);
+    const ids = Array.from(checked).filter((id) => {
+      const row = rows?.find((r) => r.id === id);
+      return row && !STATUS_LOCKED.has(row.effective_status);
+    });
+    if (ids.length === 0) {
+      setMessage("Nada selecionado pode mudar de status (arquivado/excluído trava edição, ou nada marcado).");
+      return;
+    }
+    if (!confirm(`${status === "ACTIVE" ? "Ativar" : "Pausar"} ${ids.length} ${label} selecionada(s)?`)) return;
+
+    const result = await runBulk(ids, async (id) => {
+      const res = await fetch(`/api/meta/objects/${id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, status }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "falha");
+      applyLocalStatus(l, id, status);
+    });
+    setMessage(`${result.ok} ${label} atualizada(s)${result.fail ? `, ${result.fail} falharam.` : "."}`);
+  }
+
+  async function bulkDuplicate(l: Level) {
+    const { checked, label } = levelMeta(l);
+    const ids = Array.from(checked);
+    if (ids.length === 0) return;
+    if (!confirm(`Duplicar ${ids.length} ${label} selecionada(s) e já deixar ativa(s)?`)) return;
+
+    const endpoint = (id: string) =>
+      l === "campaigns" ? `/api/meta/campaigns/${id}/duplicate` : l === "adsets" ? `/api/meta/adsets/${id}/duplicate` : `/api/meta/ads/${id}/duplicate`;
+
+    const result = await runBulk(ids, async (id) => {
+      const res = await fetch(endpoint(id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "falha");
+    });
+    setMessage(`${result.ok} ${label} duplicada(s)${result.fail ? `, ${result.fail} falharam.` : "."}`);
+    if (l === "campaigns") loadCampaigns();
+    else if (l === "adsets") loadAdsets();
+    else loadAds();
+  }
+
+  async function bulkDelete(l: Level) {
+    const { checked, rows, setChecked, label } = levelMeta(l);
+    const ids = Array.from(checked).filter((id) => {
+      const row = rows?.find((r) => r.id === id);
+      return row && row.effective_status !== "DELETED";
+    });
+    if (ids.length === 0) {
+      setMessage("Nada selecionado pra excluir (ou já tá tudo excluído).");
+      return;
+    }
+    if (!confirm(`EXCLUIR ${ids.length} ${label} selecionada(s)? É permanente — a Meta não deixa reverter.`)) return;
+
+    const result = await runBulk(ids, async (id) => {
+      const res = await fetch(`/api/meta/objects/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "falha");
+    });
+    setMessage(`${result.ok} ${label} excluída(s)${result.fail ? `, ${result.fail} falharam.` : "."}`);
+    setChecked(new Set());
+    if (l === "campaigns") loadCampaigns();
+    else if (l === "adsets") loadAdsets();
+    else loadAds();
   }
 
   function toggleStatusFilter(set: Set<string>, setSet: (s: Set<string>) => void, status: string) {
@@ -539,6 +737,17 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
           onClear={() => setStatusFilterCampaigns(new Set())}
         />
       )}
+      {level === "campaigns" && (
+        <BulkActionBar
+          count={checkedCampaigns.size}
+          busy={busyIds.size > 0}
+          onPause={() => bulkSetStatus("campaigns", "PAUSED")}
+          onActivate={() => bulkSetStatus("campaigns", "ACTIVE")}
+          onDuplicate={() => bulkDuplicate("campaigns")}
+          onDelete={() => bulkDelete("campaigns")}
+          onClear={() => setCheckedCampaigns(new Set())}
+        />
+      )}
 
       {level === "adsets" && (
         <>
@@ -565,6 +774,15 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
               onClear={() => setStatusFilterAdsets(new Set())}
             />
           )}
+          <BulkActionBar
+            count={checkedAdsets.size}
+            busy={busyIds.size > 0}
+            onPause={() => bulkSetStatus("adsets", "PAUSED")}
+            onActivate={() => bulkSetStatus("adsets", "ACTIVE")}
+            onDuplicate={() => bulkDuplicate("adsets")}
+            onDelete={() => bulkDelete("adsets")}
+            onClear={() => setCheckedAdsets(new Set())}
+          />
         </>
       )}
       {level === "ads" && (
@@ -592,6 +810,15 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
               onClear={() => setStatusFilterAds(new Set())}
             />
           )}
+          <BulkActionBar
+            count={checkedAds.size}
+            busy={busyIds.size > 0}
+            onPause={() => bulkSetStatus("ads", "PAUSED")}
+            onActivate={() => bulkSetStatus("ads", "ACTIVE")}
+            onDuplicate={() => bulkDuplicate("ads")}
+            onDelete={() => bulkDelete("ads")}
+            onClear={() => setCheckedAds(new Set())}
+          />
         </>
       )}
 
@@ -687,6 +914,14 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
                           <button title="Duplicar campanha" disabled={isBusy} onClick={() => duplicateCampaign(campaign)} className={ICON_BTN}>
                             <Copy size={13} />
                           </button>
+                          <button
+                            title={campaign.effective_status === "DELETED" ? "Já excluída" : "Excluir campanha"}
+                            disabled={isBusy || campaign.effective_status === "DELETED"}
+                            onClick={() => deleteOne(campaign.id, `a campanha "${campaign.name}"`, () => loadCampaigns())}
+                            className={`${ICON_BTN} hover:border-[var(--danger)]/40 hover:text-[var(--danger)]`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -779,6 +1014,14 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
                           <button title="Duplicar conjunto" disabled={isBusy} onClick={() => duplicateAdset(adset)} className={ICON_BTN}>
                             <Copy size={12} />
                           </button>
+                          <button
+                            title={adset.effective_status === "DELETED" ? "Já excluído" : "Excluir conjunto"}
+                            disabled={isBusy || adset.effective_status === "DELETED"}
+                            onClick={() => deleteOne(adset.id, `o conjunto "${adset.name}"`, () => loadAdsets())}
+                            className={`${ICON_BTN} hover:border-[var(--danger)]/40 hover:text-[var(--danger)]`}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -809,6 +1052,7 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
             <table className="w-full text-sm">
               <thead className="text-xs uppercase text-[var(--text-muted)]">
                 <tr className="border-b border-[var(--border)]">
+                  <th className="w-8 px-3 py-3" />
                   <SortableTh label="Nome" sortKey="name" activeKey={sortAds.key} dir={sortAds.dir} onSort={onSortAds} />
                   {adCols.orderedVisible.map((key) => (
                     <SortableTh
@@ -827,14 +1071,14 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
               <tbody>
                 {loadingAds && (
                   <tr>
-                    <td colSpan={2 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                    <td colSpan={3 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
                       Carregando anúncios direto da Meta...
                     </td>
                   </tr>
                 )}
                 {!loadingAds && sortedAds.length === 0 && (
                   <tr>
-                    <td colSpan={2 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                    <td colSpan={3 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
                       Nenhum anúncio encontrado.
                     </td>
                   </tr>
@@ -844,6 +1088,9 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
                   const locked = STATUS_LOCKED.has(ad.effective_status);
                   return (
                     <tr key={ad.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                      <td className="px-3 py-2.5">
+                        <input type="checkbox" checked={checkedAds.has(ad.id)} onChange={() => toggleChecked(checkedAds, setCheckedAds, ad.id)} />
+                      </td>
                       <td className="px-4 py-2.5 font-medium text-[var(--text)]">{ad.name}</td>
                       {adCols.orderedVisible.map((key) => (
                         <td key={key} className={`px-4 py-2.5 text-[var(--text-muted)] ${AD_ALIGN_LEFT.includes(key) ? "text-left" : "text-right"}`}>
@@ -859,6 +1106,17 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
                             className={ICON_BTN}
                           >
                             {ad.effective_status === "ACTIVE" ? <Pause size={12} /> : <Play size={12} />}
+                          </button>
+                          <button title="Duplicar anúncio" disabled={isBusy} onClick={() => duplicateAd(ad)} className={ICON_BTN}>
+                            <Copy size={12} />
+                          </button>
+                          <button
+                            title={ad.effective_status === "DELETED" ? "Já excluído" : "Excluir anúncio"}
+                            disabled={isBusy || ad.effective_status === "DELETED"}
+                            onClick={() => deleteOne(ad.id, `o anúncio "${ad.name}"`, () => loadAds())}
+                            className={`${ICON_BTN} hover:border-[var(--danger)]/40 hover:text-[var(--danger)]`}
+                          >
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       </td>

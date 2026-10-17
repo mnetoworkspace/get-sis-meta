@@ -633,6 +633,31 @@ export async function duplicateAdSet(
   return { newAdSetId: created.id, newAdIds };
 }
 
+// Duplica um único anúncio (reaproveita o mesmo criativo, não recria) —
+// usado pela ação "duplicar" no nível de anúncio do painel.
+export async function fetchAdFullConfig(
+  adId: string,
+  token: string,
+): Promise<{ id: string; name: string; adset_id: string; creative?: { id: string } }> {
+  return graphGet(`/${adId}`, { fields: "id,name,adset_id,creative{id}", access_token: token });
+}
+
+export async function duplicateAd(adId: string, adAccountId: string, token: string): Promise<{ newAdId: string }> {
+  const config = await fetchAdFullConfig(adId, token);
+  if (!config.creative?.id) {
+    throw new Error("Esse anúncio não tem criativo — não dá pra duplicar.");
+  }
+
+  const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+  const created = await createAd(
+    adAccountId,
+    { name: `${config.name} - Dup ${timestamp}`, adset_id: config.adset_id, creative_id: config.creative.id, status: "ACTIVE" },
+    token,
+  );
+
+  return { newAdId: created.id };
+}
+
 // --- Estrutura ativa com orçamento (previsão de gasto do dia) ---
 // Diferente de insights (o que já foi gasto), isso é a config atual — o
 // teto que CADA campanha/conjunto ativo ainda pode gastar hoje.
