@@ -696,11 +696,27 @@ export async function fetchRejectedAds(adAccountId: string, token: string): Prom
   });
 }
 
-// --- Painel de gerenciamento manual (ver src/app/ads) ---
-// Lista campanha/conjunto/anúncio sem filtrar por status — a Graph API já
-// exclui ARCHIVED/DELETED por padrão nesses edges (sem precisar de
-// "filtering" explícito), então isso aqui traz ACTIVE e PAUSED, igual a
-// visão padrão do próprio Ads Manager.
+// --- Painel de gerenciamento manual (ver src/components/AdsManagerTab.tsx) ---
+// Lista campanha/conjunto/anúncio pedindo TODOS os status (inclusive
+// ARCHIVED/DELETED via "filtering" explícito) — por padrão esses edges só
+// trazem ACTIVE/PAUSED, o que escondia justamente os conjuntos/anúncios
+// arquivados que geraram resultado e pararam de rodar (ver investigação da
+// conta LCF). A pessoa que vê o painel decide o que fazer com cada status.
+const ALL_EFFECTIVE_STATUSES = [
+  "ACTIVE",
+  "PAUSED",
+  "ARCHIVED",
+  "DELETED",
+  "CAMPAIGN_PAUSED",
+  "ADSET_PAUSED",
+  "PENDING_REVIEW",
+  "DISAPPROVED",
+  "PREAPPROVED",
+  "PENDING_BILLING_INFO",
+  "IN_PROCESS",
+  "WITH_ISSUES",
+];
+const ALL_STATUS_FILTER = JSON.stringify([{ field: "effective_status", operator: "IN", value: ALL_EFFECTIVE_STATUSES }]);
 
 export interface CampaignSummary {
   id: string;
@@ -714,6 +730,7 @@ export interface CampaignSummary {
 export async function fetchCampaignsForAccount(adAccountId: string, token: string): Promise<CampaignSummary[]> {
   return graphGetAllPages<CampaignSummary>(`/${adAccountId}/campaigns`, {
     fields: "id,name,objective,effective_status,daily_budget,lifetime_budget",
+    filtering: ALL_STATUS_FILTER,
     access_token: token,
     limit: "200",
   });
@@ -726,11 +743,13 @@ export interface AdSetSummary {
   effective_status: string;
   daily_budget?: string | null;
   lifetime_budget?: string | null;
+  campaign?: { name: string };
 }
 
 export async function fetchAdSetsForCampaign(campaignId: string, token: string): Promise<AdSetSummary[]> {
   return graphGetAllPages<AdSetSummary>(`/${campaignId}/adsets`, {
-    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget",
+    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget,campaign{name}",
+    filtering: ALL_STATUS_FILTER,
     access_token: token,
     limit: "200",
   });
@@ -742,7 +761,8 @@ export async function fetchAdSetsForCampaign(campaignId: string, token: string):
 // Manager mostra tudo da conta se nada tá selecionado.
 export async function fetchAdSetsForAccount(adAccountId: string, token: string): Promise<AdSetSummary[]> {
   return graphGetAllPages<AdSetSummary>(`/${adAccountId}/adsets`, {
-    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget",
+    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget,campaign{name}",
+    filtering: ALL_STATUS_FILTER,
     access_token: token,
     limit: "200",
   });
@@ -754,11 +774,13 @@ export interface AdSummary {
   adset_id: string;
   effective_status: string;
   creative?: { id: string; thumbnail_url?: string };
+  adset?: { name: string };
 }
 
 export async function fetchAdsForAdSet(adsetId: string, token: string): Promise<AdSummary[]> {
   return graphGetAllPages<AdSummary>(`/${adsetId}/ads`, {
-    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url}",
+    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url},adset{name}",
+    filtering: ALL_STATUS_FILTER,
     access_token: token,
     limit: "200",
   });
@@ -769,7 +791,8 @@ export async function fetchAdsForAdSet(adsetId: string, token: string): Promise<
 // marcado.
 export async function fetchAdsForAccount(adAccountId: string, token: string): Promise<AdSummary[]> {
   return graphGetAllPages<AdSummary>(`/${adAccountId}/ads`, {
-    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url}",
+    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url},adset{name}",
+    filtering: ALL_STATUS_FILTER,
     access_token: token,
     limit: "200",
   });
@@ -838,7 +861,12 @@ export async function duplicateCampaign(
   token: string,
 ): Promise<DuplicateCampaignResult> {
   const config = await fetchCampaignFullConfig(campaignId, token);
-  const adsets = await fetchAdSetsForCampaign(campaignId, token);
+  // fetchAdSetsForCampaign agora traz ARCHIVED/DELETED também (ver
+  // ALL_STATUS_FILTER) — duplicar campanha inteira só faz sentido pros
+  // conjuntos que ainda existem de verdade.
+  const adsets = (await fetchAdSetsForCampaign(campaignId, token)).filter(
+    (a) => a.effective_status !== "DELETED",
+  );
 
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
   const newCampaign = await createCampaign(

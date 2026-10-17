@@ -32,6 +32,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       const insight = insightByAd.get(a.id);
       return {
         ...a,
+        adset_name: a.adset?.name ?? null,
         spend_today: Number(insight?.spend ?? 0),
         purchases_today: actionCount(insight?.actions, "purchase"),
       };

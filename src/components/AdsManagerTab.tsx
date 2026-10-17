@@ -1,8 +1,12 @@
 "use client";
 
 import { Copy, Pause, Play, RefreshCw, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatCurrency } from "@/lib/format";
+import { applySort, nextSortState, usePersistedSort } from "@/lib/sort";
+import { SortableTh } from "@/components/ui/sortable-th";
+import { ColumnManagerButton } from "@/components/ui/column-manager";
+import { useColumnConfig, type ColumnDef } from "@/lib/column-config";
 
 interface AdAccountOption {
   id: string;
@@ -26,6 +30,7 @@ interface AdSetRow {
   id: string;
   name: string;
   campaign_id: string;
+  campaign_name: string | null;
   effective_status: string;
   daily_budget: string | null;
   lifetime_budget: string | null;
@@ -37,6 +42,7 @@ interface AdRow {
   id: string;
   name: string;
   adset_id: string;
+  adset_name: string | null;
   effective_status: string;
   spend_today: number;
   purchases_today: number;
@@ -53,26 +59,73 @@ const LEVELS: { key: Level; label: string }[] = [
 const STATUS_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-500/15 text-emerald-500",
   PAUSED: "bg-[var(--surface-muted)] text-[var(--text-muted)]",
+  CAMPAIGN_PAUSED: "bg-[var(--surface-muted)] text-[var(--text-muted)]",
+  ADSET_PAUSED: "bg-[var(--surface-muted)] text-[var(--text-muted)]",
+  ARCHIVED: "bg-amber-500/15 text-amber-500",
+  DELETED: "bg-[var(--danger-soft)] text-[var(--danger)]",
 };
+
+// Não dá pra pausar/ativar um objeto arquivado ou excluído — a Meta
+// recusa a chamada (só deixa renomear ou, no caso de arquivado, duplicar
+// pra criar uma cópia nova). Ver investigação do conjunto arquivado da
+// conta LCF.
+const STATUS_LOCKED = new Set(["ARCHIVED", "DELETED"]);
 
 function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_STYLES[status] ?? "bg-amber-500/15 text-amber-500";
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>{status}</span>;
 }
 
+function budgetValue(dailyBudget: string | null, lifetimeBudget: string | null): number | null {
+  if (dailyBudget) return Number(dailyBudget) / 100;
+  if (lifetimeBudget) return Number(lifetimeBudget) / 100;
+  return null;
+}
+
 function budgetLabel(dailyBudget: string | null, lifetimeBudget: string | null, currency: string | null): string {
   if (dailyBudget) return `${formatCurrency(Number(dailyBudget) / 100, currency)}/dia`;
   if (lifetimeBudget) return `${formatCurrency(Number(lifetimeBudget) / 100, currency)} total`;
-  return "orçamento da campanha (CBO)";
+  return "CBO (orçamento da campanha)";
 }
 
-function costPerPurchase(spend: number, purchases: number, currency: string | null): string {
-  if (!purchases) return "—";
-  return formatCurrency(spend / purchases, currency);
+function costPerPurchaseValue(spend: number, purchases: number): number | null {
+  return purchases > 0 ? spend / purchases : null;
 }
 
 const ICON_BTN =
-  "flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] disabled:opacity-50";
+  "flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] disabled:opacity-40";
+
+type CampaignColKey = "status" | "objective" | "budget" | "spend" | "purchases" | "cpa";
+const CAMPAIGN_COLUMNS: ColumnDef<CampaignColKey>[] = [
+  { key: "status", label: "Status", defaultOn: true },
+  { key: "objective", label: "Objetivo", defaultOn: true },
+  { key: "budget", label: "Orçamento", defaultOn: true },
+  { key: "spend", label: "Gasto hoje", defaultOn: true },
+  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "cpa", label: "Custo/Compra", defaultOn: true },
+];
+const CAMPAIGN_ALIGN_LEFT: CampaignColKey[] = ["status", "objective", "budget"];
+
+type AdSetColKey = "campaign" | "status" | "budget" | "spend" | "purchases" | "cpa";
+const ADSET_COLUMNS: ColumnDef<AdSetColKey>[] = [
+  { key: "campaign", label: "Campanha", defaultOn: true },
+  { key: "status", label: "Status", defaultOn: true },
+  { key: "budget", label: "Orçamento", defaultOn: true },
+  { key: "spend", label: "Gasto hoje", defaultOn: true },
+  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "cpa", label: "Custo/Compra", defaultOn: true },
+];
+const ADSET_ALIGN_LEFT: AdSetColKey[] = ["campaign", "status", "budget"];
+
+type AdColKey = "adset" | "status" | "spend" | "purchases" | "cpa";
+const AD_COLUMNS: ColumnDef<AdColKey>[] = [
+  { key: "adset", label: "Conjunto", defaultOn: true },
+  { key: "status", label: "Status", defaultOn: true },
+  { key: "spend", label: "Gasto hoje", defaultOn: true },
+  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "cpa", label: "Custo/Compra", defaultOn: true },
+];
+const AD_ALIGN_LEFT: AdColKey[] = ["adset", "status"];
 
 export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
   const [accountId, setAccountId] = useState("");
@@ -92,6 +145,13 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [sortCampaigns, setSortCampaigns] = usePersistedSort("ads-mgr-campaigns-v1");
+  const campaignCols = useColumnConfig<CampaignColKey>("ads-mgr-campaigns-v1", CAMPAIGN_COLUMNS);
+  const [sortAdsets, setSortAdsets] = usePersistedSort("ads-mgr-adsets-v1");
+  const adsetCols = useColumnConfig<AdSetColKey>("ads-mgr-adsets-v1", ADSET_COLUMNS);
+  const [sortAds, setSortAds] = usePersistedSort("ads-mgr-ads-v1");
+  const adCols = useColumnConfig<AdColKey>("ads-mgr-ads-v1", AD_COLUMNS);
 
   const selectedAccount = accounts.find((a) => a.id === accountId) ?? null;
   const currency = selectedAccount?.currency ?? null;
@@ -251,6 +311,101 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     }
   }
 
+  const campaignGetters: Record<string, (r: CampaignRow) => string | number | null> = {
+    name: (r) => r.name,
+    status: (r) => r.effective_status,
+    objective: (r) => r.objective,
+    budget: (r) => budgetValue(r.daily_budget, r.lifetime_budget),
+    spend: (r) => r.spend_today,
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+  };
+  const campaignDefaultCompare = (a: CampaignRow, b: CampaignRow) =>
+    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+  const sortedCampaigns = useMemo(
+    () => (campaigns ? applySort(campaigns, sortCampaigns, campaignGetters, campaignDefaultCompare) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [campaigns, sortCampaigns],
+  );
+
+  const adsetGetters: Record<string, (r: AdSetRow) => string | number | null> = {
+    name: (r) => r.name,
+    campaign: (r) => r.campaign_name || "",
+    status: (r) => r.effective_status,
+    budget: (r) => budgetValue(r.daily_budget, r.lifetime_budget),
+    spend: (r) => r.spend_today,
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+  };
+  const adsetDefaultCompare = (a: AdSetRow, b: AdSetRow) =>
+    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+  const sortedAdsets = useMemo(
+    () => (adsets ? applySort(adsets, sortAdsets, adsetGetters, adsetDefaultCompare) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [adsets, sortAdsets],
+  );
+
+  const adGetters: Record<string, (r: AdRow) => string | number | null> = {
+    name: (r) => r.name,
+    adset: (r) => r.adset_name || "",
+    status: (r) => r.effective_status,
+    spend: (r) => r.spend_today,
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+  };
+  const adDefaultCompare = (a: AdRow, b: AdRow) =>
+    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+  const sortedAds = useMemo(
+    () => (ads ? applySort(ads, sortAds, adGetters, adDefaultCompare) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ads, sortAds],
+  );
+
+  const campaignCellRenderers: Record<CampaignColKey, (r: CampaignRow) => ReactNode> = {
+    status: (r) => <StatusBadge status={r.effective_status} />,
+    objective: (r) => r.objective,
+    budget: (r) => budgetLabel(r.daily_budget, r.lifetime_budget, currency),
+    spend: (r) => formatCurrency(r.spend_today, currency),
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => {
+      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      return v != null ? formatCurrency(v, currency) : "—";
+    },
+  };
+
+  const adsetCellRenderers: Record<AdSetColKey, (r: AdSetRow) => ReactNode> = {
+    campaign: (r) => r.campaign_name || "—",
+    status: (r) => <StatusBadge status={r.effective_status} />,
+    budget: (r) => budgetLabel(r.daily_budget, r.lifetime_budget, currency),
+    spend: (r) => formatCurrency(r.spend_today, currency),
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => {
+      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      return v != null ? formatCurrency(v, currency) : "—";
+    },
+  };
+
+  const adCellRenderers: Record<AdColKey, (r: AdRow) => ReactNode> = {
+    adset: (r) => r.adset_name || "—",
+    status: (r) => <StatusBadge status={r.effective_status} />,
+    spend: (r) => formatCurrency(r.spend_today, currency),
+    purchases: (r) => r.purchases_today,
+    cpa: (r) => {
+      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      return v != null ? formatCurrency(v, currency) : "—";
+    },
+  };
+
+  function onSortCampaigns(key: string) {
+    setSortCampaigns((s) => nextSortState(s, key));
+  }
+  function onSortAdsets(key: string) {
+    setSortAdsets((s) => nextSortState(s, key));
+  }
+  function onSortAds(key: string) {
+    setSortAds((s) => nextSortState(s, key));
+  }
+
   const loading = level === "campaigns" ? loadingCampaigns : level === "adsets" ? loadingAdsets : loadingAds;
 
   return (
@@ -332,137 +487,270 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
         </div>
       )}
 
-      <section className="card divide-y divide-[var(--border)] p-0">
-        {level === "campaigns" && (
-          <>
-            {loadingCampaigns && <p className="p-5 text-sm text-[var(--text-muted)]">Carregando campanhas direto da Meta...</p>}
-            {!loadingCampaigns && campaigns?.length === 0 && (
-              <p className="p-5 text-sm text-[var(--text-muted)]">Nenhuma campanha ativa ou pausada encontrada nessa conta.</p>
-            )}
-            {campaigns?.map((campaign) => {
-              const isBusy = busyIds.has(campaign.id);
-              return (
-                <div key={campaign.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="flex min-w-0 flex-1 items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={checkedCampaigns.has(campaign.id)}
-                      onChange={() => toggleChecked(checkedCampaigns, setCheckedCampaigns, campaign.id)}
+      {level === "campaigns" && (
+        <div className="table-shell">
+          <div className="flex items-center justify-start border-b border-[var(--border)] px-3 py-2">
+            <ColumnManagerButton
+              panelId="ads-mgr-campaigns-col-panel"
+              columns={CAMPAIGN_COLUMNS}
+              colOrder={campaignCols.colOrder}
+              visibleCols={campaignCols.visibleCols}
+              onToggle={campaignCols.toggle}
+              onDragStart={campaignCols.dragStart}
+              onDragOver={campaignCols.dragOver}
+              onDragEnd={campaignCols.dragEnd}
+              onReset={campaignCols.resetToDefault}
+            />
+          </div>
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="w-8 px-3 py-3" />
+                  <SortableTh label="Nome" sortKey="name" activeKey={sortCampaigns.key} dir={sortCampaigns.dir} onSort={onSortCampaigns} />
+                  {campaignCols.orderedVisible.map((key) => (
+                    <SortableTh
+                      key={key}
+                      label={CAMPAIGN_COLUMNS.find((c) => c.key === key)!.label}
+                      sortKey={key}
+                      activeKey={sortCampaigns.key}
+                      dir={sortCampaigns.dir}
+                      align={CAMPAIGN_ALIGN_LEFT.includes(key) ? "left" : "right"}
+                      onSort={onSortCampaigns}
                     />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--text)]">{campaign.name}</p>
-                      <p className="truncate text-xs text-[var(--text-muted)]">
-                        {campaign.objective} · {budgetLabel(campaign.daily_budget, campaign.lifetime_budget, currency)}
-                      </p>
-                    </div>
-                  </label>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <div className="text-right text-xs text-[var(--text-muted)]">
-                      <p className="text-[var(--text)]">{formatCurrency(campaign.spend_today, currency)} hoje</p>
-                      <p>
-                        {campaign.purchases_today} compra(s) · {costPerPurchase(campaign.spend_today, campaign.purchases_today, currency)}/compra
-                      </p>
-                    </div>
-                    <StatusBadge status={campaign.effective_status} />
-                    <button
-                      title={campaign.effective_status === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
-                      disabled={isBusy}
-                      onClick={() => toggleStatus(campaign.id, campaign.effective_status, (s) => setCampaignStatus(campaign.id, s))}
-                      className={ICON_BTN}
-                    >
-                      {campaign.effective_status === "ACTIVE" ? <Pause size={13} /> : <Play size={13} />}
-                    </button>
-                    <button title="Duplicar campanha" disabled={isBusy} onClick={() => duplicateCampaign(campaign)} className={ICON_BTN}>
-                      <Copy size={13} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
+                  ))}
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingCampaigns && (
+                  <tr>
+                    <td colSpan={3 + campaignCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Carregando campanhas direto da Meta...
+                    </td>
+                  </tr>
+                )}
+                {!loadingCampaigns && sortedCampaigns.length === 0 && (
+                  <tr>
+                    <td colSpan={3 + campaignCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Nenhuma campanha encontrada nessa conta.
+                    </td>
+                  </tr>
+                )}
+                {sortedCampaigns.map((campaign) => {
+                  const isBusy = busyIds.has(campaign.id);
+                  const locked = STATUS_LOCKED.has(campaign.effective_status);
+                  return (
+                    <tr key={campaign.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checkedCampaigns.has(campaign.id)}
+                          onChange={() => toggleChecked(checkedCampaigns, setCheckedCampaigns, campaign.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-[var(--text)]">{campaign.name}</td>
+                      {campaignCols.orderedVisible.map((key) => (
+                        <td key={key} className={`px-4 py-2.5 text-[var(--text-muted)] ${CAMPAIGN_ALIGN_LEFT.includes(key) ? "text-left" : "text-right"}`}>
+                          {campaignCellRenderers[key](campaign)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            title={locked ? "Status trava edição — use duplicar" : campaign.effective_status === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
+                            disabled={isBusy || locked}
+                            onClick={() => toggleStatus(campaign.id, campaign.effective_status, (s) => setCampaignStatus(campaign.id, s))}
+                            className={ICON_BTN}
+                          >
+                            {campaign.effective_status === "ACTIVE" ? <Pause size={13} /> : <Play size={13} />}
+                          </button>
+                          <button title="Duplicar campanha" disabled={isBusy} onClick={() => duplicateCampaign(campaign)} className={ICON_BTN}>
+                            <Copy size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-        {level === "adsets" && (
-          <>
-            {loadingAdsets && <p className="p-5 text-sm text-[var(--text-muted)]">Carregando conjuntos direto da Meta...</p>}
-            {!loadingAdsets && adsets?.length === 0 && (
-              <p className="p-5 text-sm text-[var(--text-muted)]">Nenhum conjunto ativo/pausado encontrado.</p>
-            )}
-            {adsets?.map((adset) => {
-              const isBusy = busyIds.has(adset.id);
-              return (
-                <div key={adset.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="flex min-w-0 flex-1 items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={checkedAdsets.has(adset.id)}
-                      onChange={() => toggleChecked(checkedAdsets, setCheckedAdsets, adset.id)}
+      {level === "adsets" && (
+        <div className="table-shell">
+          <div className="flex items-center justify-start border-b border-[var(--border)] px-3 py-2">
+            <ColumnManagerButton
+              panelId="ads-mgr-adsets-col-panel"
+              columns={ADSET_COLUMNS}
+              colOrder={adsetCols.colOrder}
+              visibleCols={adsetCols.visibleCols}
+              onToggle={adsetCols.toggle}
+              onDragStart={adsetCols.dragStart}
+              onDragOver={adsetCols.dragOver}
+              onDragEnd={adsetCols.dragEnd}
+              onReset={adsetCols.resetToDefault}
+            />
+          </div>
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="w-8 px-3 py-3" />
+                  <SortableTh label="Nome" sortKey="name" activeKey={sortAdsets.key} dir={sortAdsets.dir} onSort={onSortAdsets} />
+                  {adsetCols.orderedVisible.map((key) => (
+                    <SortableTh
+                      key={key}
+                      label={ADSET_COLUMNS.find((c) => c.key === key)!.label}
+                      sortKey={key}
+                      activeKey={sortAdsets.key}
+                      dir={sortAdsets.dir}
+                      align={ADSET_ALIGN_LEFT.includes(key) ? "left" : "right"}
+                      onSort={onSortAdsets}
                     />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-[var(--text)]">{adset.name}</p>
-                      <p className="truncate text-xs text-[var(--text-muted)]">
-                        {budgetLabel(adset.daily_budget, adset.lifetime_budget, currency)}
-                      </p>
-                    </div>
-                  </label>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <div className="text-right text-xs text-[var(--text-muted)]">
-                      <p className="text-[var(--text)]">{formatCurrency(adset.spend_today, currency)} hoje</p>
-                      <p>
-                        {adset.purchases_today} compra(s) · {costPerPurchase(adset.spend_today, adset.purchases_today, currency)}/compra
-                      </p>
-                    </div>
-                    <StatusBadge status={adset.effective_status} />
-                    <button
-                      title={adset.effective_status === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
-                      disabled={isBusy}
-                      onClick={() => toggleStatus(adset.id, adset.effective_status, (s) => setAdsetStatus(adset.id, s))}
-                      className={ICON_BTN}
-                    >
-                      {adset.effective_status === "ACTIVE" ? <Pause size={12} /> : <Play size={12} />}
-                    </button>
-                    <button title="Duplicar conjunto" disabled={isBusy} onClick={() => duplicateAdset(adset)} className={ICON_BTN}>
-                      <Copy size={12} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
+                  ))}
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAdsets && (
+                  <tr>
+                    <td colSpan={3 + adsetCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Carregando conjuntos direto da Meta...
+                    </td>
+                  </tr>
+                )}
+                {!loadingAdsets && sortedAdsets.length === 0 && (
+                  <tr>
+                    <td colSpan={3 + adsetCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Nenhum conjunto encontrado.
+                    </td>
+                  </tr>
+                )}
+                {sortedAdsets.map((adset) => {
+                  const isBusy = busyIds.has(adset.id);
+                  const locked = STATUS_LOCKED.has(adset.effective_status);
+                  return (
+                    <tr key={adset.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checkedAdsets.has(adset.id)}
+                          onChange={() => toggleChecked(checkedAdsets, setCheckedAdsets, adset.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-[var(--text)]">{adset.name}</td>
+                      {adsetCols.orderedVisible.map((key) => (
+                        <td key={key} className={`px-4 py-2.5 text-[var(--text-muted)] ${ADSET_ALIGN_LEFT.includes(key) ? "text-left" : "text-right"}`}>
+                          {adsetCellRenderers[key](adset)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            title={locked ? "Status trava edição — use duplicar" : adset.effective_status === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
+                            disabled={isBusy || locked}
+                            onClick={() => toggleStatus(adset.id, adset.effective_status, (s) => setAdsetStatus(adset.id, s))}
+                            className={ICON_BTN}
+                          >
+                            {adset.effective_status === "ACTIVE" ? <Pause size={12} /> : <Play size={12} />}
+                          </button>
+                          <button title="Duplicar conjunto" disabled={isBusy} onClick={() => duplicateAdset(adset)} className={ICON_BTN}>
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-        {level === "ads" && (
-          <>
-            {loadingAds && <p className="p-5 text-sm text-[var(--text-muted)]">Carregando anúncios direto da Meta...</p>}
-            {!loadingAds && ads?.length === 0 && (
-              <p className="p-5 text-sm text-[var(--text-muted)]">Nenhum anúncio ativo/pausado encontrado.</p>
-            )}
-            {ads?.map((ad) => {
-              const isBusy = busyIds.has(ad.id);
-              return (
-                <div key={ad.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="min-w-0 flex-1 truncate text-sm text-[var(--text)]">{ad.name}</p>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <div className="text-right text-xs text-[var(--text-muted)]">
-                      <p className="text-[var(--text)]">{formatCurrency(ad.spend_today, currency)} hoje</p>
-                      <p>{ad.purchases_today} compra(s)</p>
-                    </div>
-                    <StatusBadge status={ad.effective_status} />
-                    <button
-                      title={ad.effective_status === "ACTIVE" ? "Pausar anúncio" : "Ativar anúncio"}
-                      disabled={isBusy}
-                      onClick={() => toggleStatus(ad.id, ad.effective_status, (s) => setAdStatus(ad.id, s))}
-                      className={ICON_BTN}
-                    >
-                      {ad.effective_status === "ACTIVE" ? <Pause size={12} /> : <Play size={12} />}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
-      </section>
+      {level === "ads" && (
+        <div className="table-shell">
+          <div className="flex items-center justify-start border-b border-[var(--border)] px-3 py-2">
+            <ColumnManagerButton
+              panelId="ads-mgr-ads-col-panel"
+              columns={AD_COLUMNS}
+              colOrder={adCols.colOrder}
+              visibleCols={adCols.visibleCols}
+              onToggle={adCols.toggle}
+              onDragStart={adCols.dragStart}
+              onDragOver={adCols.dragOver}
+              onDragEnd={adCols.dragEnd}
+              onReset={adCols.resetToDefault}
+            />
+          </div>
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border)]">
+                  <SortableTh label="Nome" sortKey="name" activeKey={sortAds.key} dir={sortAds.dir} onSort={onSortAds} />
+                  {adCols.orderedVisible.map((key) => (
+                    <SortableTh
+                      key={key}
+                      label={AD_COLUMNS.find((c) => c.key === key)!.label}
+                      sortKey={key}
+                      activeKey={sortAds.key}
+                      dir={sortAds.dir}
+                      align={AD_ALIGN_LEFT.includes(key) ? "left" : "right"}
+                      onSort={onSortAds}
+                    />
+                  ))}
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAds && (
+                  <tr>
+                    <td colSpan={2 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Carregando anúncios direto da Meta...
+                    </td>
+                  </tr>
+                )}
+                {!loadingAds && sortedAds.length === 0 && (
+                  <tr>
+                    <td colSpan={2 + adCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                      Nenhum anúncio encontrado.
+                    </td>
+                  </tr>
+                )}
+                {sortedAds.map((ad) => {
+                  const isBusy = busyIds.has(ad.id);
+                  const locked = STATUS_LOCKED.has(ad.effective_status);
+                  return (
+                    <tr key={ad.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                      <td className="px-4 py-2.5 font-medium text-[var(--text)]">{ad.name}</td>
+                      {adCols.orderedVisible.map((key) => (
+                        <td key={key} className={`px-4 py-2.5 text-[var(--text-muted)] ${AD_ALIGN_LEFT.includes(key) ? "text-left" : "text-right"}`}>
+                          {adCellRenderers[key](ad)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            title={locked ? "Status trava edição" : ad.effective_status === "ACTIVE" ? "Pausar anúncio" : "Ativar anúncio"}
+                            disabled={isBusy || locked}
+                            onClick={() => toggleStatus(ad.id, ad.effective_status, (s) => setAdStatus(ad.id, s))}
+                            className={ICON_BTN}
+                          >
+                            {ad.effective_status === "ACTIVE" ? <Pause size={12} /> : <Play size={12} />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
