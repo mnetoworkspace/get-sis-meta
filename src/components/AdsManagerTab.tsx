@@ -2,11 +2,12 @@
 
 import { Copy, Pause, Play, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, todayISO } from "@/lib/format";
 import { applySort, nextSortState, usePersistedSort } from "@/lib/sort";
 import { SortableTh } from "@/components/ui/sortable-th";
 import { ColumnManagerButton } from "@/components/ui/column-manager";
 import { useColumnConfig, type ColumnDef } from "@/lib/column-config";
+import { QuickDateRange } from "@/components/ui/quick-date-range";
 
 interface AdAccountOption {
   id: string;
@@ -22,8 +23,8 @@ interface CampaignRow {
   effective_status: string;
   daily_budget: string | null;
   lifetime_budget: string | null;
-  spend_today: number;
-  purchases_today: number;
+  spend: number;
+  purchases: number;
 }
 
 interface AdSetRow {
@@ -34,8 +35,8 @@ interface AdSetRow {
   effective_status: string;
   daily_budget: string | null;
   lifetime_budget: string | null;
-  spend_today: number;
-  purchases_today: number;
+  spend: number;
+  purchases: number;
 }
 
 interface AdRow {
@@ -44,8 +45,8 @@ interface AdRow {
   adset_id: string;
   adset_name: string | null;
   effective_status: string;
-  spend_today: number;
-  purchases_today: number;
+  spend: number;
+  purchases: number;
 }
 
 type Level = "campaigns" | "adsets" | "ads";
@@ -95,13 +96,65 @@ function costPerPurchaseValue(spend: number, purchases: number): number | null {
 const ICON_BTN =
   "flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] disabled:opacity-40";
 
+// Filtro de status (chips que marcam/desmarcam) — conjunto vazio = mostra
+// tudo. As opções vêm dos status que realmente aparecem nos dados
+// carregados, não de uma lista fixa, porque cada conta/nível tem um
+// subconjunto diferente (ex: CAMPAIGN_PAUSED só existe em conjunto/anúncio).
+function StatusFilterChips({
+  rows,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  rows: { effective_status: string }[];
+  selected: Set<string>;
+  onToggle: (status: string) => void;
+  onClear: () => void;
+}) {
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rows) map.set(r.effective_status, (map.get(r.effective_status) || 0) + 1);
+    return map;
+  }, [rows]);
+  const statuses = Array.from(counts.keys()).sort();
+
+  if (statuses.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-[var(--text-muted)]">Status:</span>
+      {statuses.map((status) => {
+        const active = selected.has(status);
+        return (
+          <button
+            key={status}
+            onClick={() => onToggle(status)}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              active
+                ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text)]"
+            }`}
+          >
+            {status} ({counts.get(status)})
+          </button>
+        );
+      })}
+      {selected.size > 0 && (
+        <button onClick={onClear} className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">
+          <X size={10} /> limpar
+        </button>
+      )}
+    </div>
+  );
+}
+
 type CampaignColKey = "status" | "objective" | "budget" | "spend" | "purchases" | "cpa";
 const CAMPAIGN_COLUMNS: ColumnDef<CampaignColKey>[] = [
   { key: "status", label: "Status", defaultOn: true },
   { key: "objective", label: "Objetivo", defaultOn: true },
   { key: "budget", label: "Orçamento", defaultOn: true },
-  { key: "spend", label: "Gasto hoje", defaultOn: true },
-  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "spend", label: "Gasto", defaultOn: true },
+  { key: "purchases", label: "Compras", defaultOn: true },
   { key: "cpa", label: "Custo/Compra", defaultOn: true },
 ];
 const CAMPAIGN_ALIGN_LEFT: CampaignColKey[] = ["status", "objective", "budget"];
@@ -111,8 +164,8 @@ const ADSET_COLUMNS: ColumnDef<AdSetColKey>[] = [
   { key: "campaign", label: "Campanha", defaultOn: true },
   { key: "status", label: "Status", defaultOn: true },
   { key: "budget", label: "Orçamento", defaultOn: true },
-  { key: "spend", label: "Gasto hoje", defaultOn: true },
-  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "spend", label: "Gasto", defaultOn: true },
+  { key: "purchases", label: "Compras", defaultOn: true },
   { key: "cpa", label: "Custo/Compra", defaultOn: true },
 ];
 const ADSET_ALIGN_LEFT: AdSetColKey[] = ["campaign", "status", "budget"];
@@ -121,8 +174,8 @@ type AdColKey = "adset" | "status" | "spend" | "purchases" | "cpa";
 const AD_COLUMNS: ColumnDef<AdColKey>[] = [
   { key: "adset", label: "Conjunto", defaultOn: true },
   { key: "status", label: "Status", defaultOn: true },
-  { key: "spend", label: "Gasto hoje", defaultOn: true },
-  { key: "purchases", label: "Compras hoje", defaultOn: true },
+  { key: "spend", label: "Gasto", defaultOn: true },
+  { key: "purchases", label: "Compras", defaultOn: true },
   { key: "cpa", label: "Custo/Compra", defaultOn: true },
 ];
 const AD_ALIGN_LEFT: AdColKey[] = ["adset", "status"];
@@ -130,17 +183,22 @@ const AD_ALIGN_LEFT: AdColKey[] = ["adset", "status"];
 export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
   const [accountId, setAccountId] = useState("");
   const [level, setLevel] = useState<Level>("campaigns");
+  const [since, setSince] = useState(todayISO());
+  const [until, setUntil] = useState(todayISO());
 
   const [campaigns, setCampaigns] = useState<CampaignRow[] | null>(null);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [checkedCampaigns, setCheckedCampaigns] = useState<Set<string>>(new Set());
+  const [statusFilterCampaigns, setStatusFilterCampaigns] = useState<Set<string>>(new Set());
 
   const [adsets, setAdsets] = useState<AdSetRow[] | null>(null);
   const [loadingAdsets, setLoadingAdsets] = useState(false);
   const [checkedAdsets, setCheckedAdsets] = useState<Set<string>>(new Set());
+  const [statusFilterAdsets, setStatusFilterAdsets] = useState<Set<string>>(new Set());
 
   const [ads, setAds] = useState<AdRow[] | null>(null);
   const [loadingAds, setLoadingAds] = useState(false);
+  const [statusFilterAds, setStatusFilterAds] = useState<Set<string>>(new Set());
 
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
@@ -160,11 +218,11 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     if (accounts.length > 0 && !accountId) setAccountId(accounts[0].id);
   }, [accounts, accountId]);
 
-  function loadCampaigns() {
+  function loadCampaigns(rangeSince = since, rangeUntil = until) {
     if (!accountId) return;
     setLoadingCampaigns(true);
     setError(null);
-    fetch(`/api/meta/accounts/${accountId}/campaigns`)
+    fetch(`/api/meta/accounts/${accountId}/campaigns?since=${rangeSince}&until=${rangeUntil}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(json.error);
@@ -174,12 +232,12 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
       .finally(() => setLoadingCampaigns(false));
   }
 
-  function loadAdsets() {
+  function loadAdsets(rangeSince = since, rangeUntil = until) {
     if (!accountId) return;
     setLoadingAdsets(true);
     setError(null);
-    const qs = checkedCampaigns.size > 0 ? `?campaignIds=${Array.from(checkedCampaigns).join(",")}` : "";
-    fetch(`/api/meta/accounts/${accountId}/adsets${qs}`)
+    const campaignFilter = checkedCampaigns.size > 0 ? `&campaignIds=${Array.from(checkedCampaigns).join(",")}` : "";
+    fetch(`/api/meta/accounts/${accountId}/adsets?since=${rangeSince}&until=${rangeUntil}${campaignFilter}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(json.error);
@@ -189,12 +247,12 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
       .finally(() => setLoadingAdsets(false));
   }
 
-  function loadAds() {
+  function loadAds(rangeSince = since, rangeUntil = until) {
     if (!accountId) return;
     setLoadingAds(true);
     setError(null);
-    const qs = checkedAdsets.size > 0 ? `?adsetIds=${Array.from(checkedAdsets).join(",")}` : "";
-    fetch(`/api/meta/accounts/${accountId}/ads${qs}`)
+    const adsetFilter = checkedAdsets.size > 0 ? `&adsetIds=${Array.from(checkedAdsets).join(",")}` : "";
+    fetch(`/api/meta/accounts/${accountId}/ads?since=${rangeSince}&until=${rangeUntil}${adsetFilter}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(json.error);
@@ -211,11 +269,22 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     setAds(null);
     setCheckedCampaigns(new Set());
     setCheckedAdsets(new Set());
+    setStatusFilterCampaigns(new Set());
+    setStatusFilterAdsets(new Set());
+    setStatusFilterAds(new Set());
     setLevel("campaigns");
     setMessage(null);
     loadCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
+
+  function onDateRangeChange(s: string, u: string) {
+    setSince(s);
+    setUntil(u);
+    if (level === "campaigns") loadCampaigns(s, u);
+    else if (level === "adsets") loadAdsets(s, u);
+    else loadAds(s, u);
+  }
 
   function goToLevel(next: Level) {
     setLevel(next);
@@ -311,21 +380,41 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     }
   }
 
+  function toggleStatusFilter(set: Set<string>, setSet: (s: Set<string>) => void, status: string) {
+    const next = new Set(set);
+    if (next.has(status)) next.delete(status);
+    else next.add(status);
+    setSet(next);
+  }
+
+  const visibleCampaigns = useMemo(
+    () => (statusFilterCampaigns.size > 0 ? (campaigns ?? []).filter((c) => statusFilterCampaigns.has(c.effective_status)) : campaigns ?? []),
+    [campaigns, statusFilterCampaigns],
+  );
+  const visibleAdsets = useMemo(
+    () => (statusFilterAdsets.size > 0 ? (adsets ?? []).filter((a) => statusFilterAdsets.has(a.effective_status)) : adsets ?? []),
+    [adsets, statusFilterAdsets],
+  );
+  const visibleAds = useMemo(
+    () => (statusFilterAds.size > 0 ? (ads ?? []).filter((a) => statusFilterAds.has(a.effective_status)) : ads ?? []),
+    [ads, statusFilterAds],
+  );
+
   const campaignGetters: Record<string, (r: CampaignRow) => string | number | null> = {
     name: (r) => r.name,
     status: (r) => r.effective_status,
     objective: (r) => r.objective,
     budget: (r) => budgetValue(r.daily_budget, r.lifetime_budget),
-    spend: (r) => r.spend_today,
-    purchases: (r) => r.purchases_today,
-    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+    spend: (r) => r.spend,
+    purchases: (r) => r.purchases,
+    cpa: (r) => costPerPurchaseValue(r.spend, r.purchases),
   };
   const campaignDefaultCompare = (a: CampaignRow, b: CampaignRow) =>
-    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+    b.spend - a.spend || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
   const sortedCampaigns = useMemo(
-    () => (campaigns ? applySort(campaigns, sortCampaigns, campaignGetters, campaignDefaultCompare) : []),
+    () => applySort(visibleCampaigns, sortCampaigns, campaignGetters, campaignDefaultCompare),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [campaigns, sortCampaigns],
+    [visibleCampaigns, sortCampaigns],
   );
 
   const adsetGetters: Record<string, (r: AdSetRow) => string | number | null> = {
@@ -333,42 +422,42 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     campaign: (r) => r.campaign_name || "",
     status: (r) => r.effective_status,
     budget: (r) => budgetValue(r.daily_budget, r.lifetime_budget),
-    spend: (r) => r.spend_today,
-    purchases: (r) => r.purchases_today,
-    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+    spend: (r) => r.spend,
+    purchases: (r) => r.purchases,
+    cpa: (r) => costPerPurchaseValue(r.spend, r.purchases),
   };
   const adsetDefaultCompare = (a: AdSetRow, b: AdSetRow) =>
-    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+    b.spend - a.spend || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
   const sortedAdsets = useMemo(
-    () => (adsets ? applySort(adsets, sortAdsets, adsetGetters, adsetDefaultCompare) : []),
+    () => applySort(visibleAdsets, sortAdsets, adsetGetters, adsetDefaultCompare),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [adsets, sortAdsets],
+    [visibleAdsets, sortAdsets],
   );
 
   const adGetters: Record<string, (r: AdRow) => string | number | null> = {
     name: (r) => r.name,
     adset: (r) => r.adset_name || "",
     status: (r) => r.effective_status,
-    spend: (r) => r.spend_today,
-    purchases: (r) => r.purchases_today,
-    cpa: (r) => costPerPurchaseValue(r.spend_today, r.purchases_today),
+    spend: (r) => r.spend,
+    purchases: (r) => r.purchases,
+    cpa: (r) => costPerPurchaseValue(r.spend, r.purchases),
   };
   const adDefaultCompare = (a: AdRow, b: AdRow) =>
-    b.spend_today - a.spend_today || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
+    b.spend - a.spend || a.name.localeCompare(b.name, "pt-BR", { numeric: true });
   const sortedAds = useMemo(
-    () => (ads ? applySort(ads, sortAds, adGetters, adDefaultCompare) : []),
+    () => applySort(visibleAds, sortAds, adGetters, adDefaultCompare),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ads, sortAds],
+    [visibleAds, sortAds],
   );
 
   const campaignCellRenderers: Record<CampaignColKey, (r: CampaignRow) => ReactNode> = {
     status: (r) => <StatusBadge status={r.effective_status} />,
     objective: (r) => r.objective,
     budget: (r) => budgetLabel(r.daily_budget, r.lifetime_budget, currency),
-    spend: (r) => formatCurrency(r.spend_today, currency),
-    purchases: (r) => r.purchases_today,
+    spend: (r) => formatCurrency(r.spend, currency),
+    purchases: (r) => r.purchases,
     cpa: (r) => {
-      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      const v = costPerPurchaseValue(r.spend, r.purchases);
       return v != null ? formatCurrency(v, currency) : "—";
     },
   };
@@ -377,10 +466,10 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
     campaign: (r) => r.campaign_name || "—",
     status: (r) => <StatusBadge status={r.effective_status} />,
     budget: (r) => budgetLabel(r.daily_budget, r.lifetime_budget, currency),
-    spend: (r) => formatCurrency(r.spend_today, currency),
-    purchases: (r) => r.purchases_today,
+    spend: (r) => formatCurrency(r.spend, currency),
+    purchases: (r) => r.purchases,
     cpa: (r) => {
-      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      const v = costPerPurchaseValue(r.spend, r.purchases);
       return v != null ? formatCurrency(v, currency) : "—";
     },
   };
@@ -388,10 +477,10 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
   const adCellRenderers: Record<AdColKey, (r: AdRow) => ReactNode> = {
     adset: (r) => r.adset_name || "—",
     status: (r) => <StatusBadge status={r.effective_status} />,
-    spend: (r) => formatCurrency(r.spend_today, currency),
-    purchases: (r) => r.purchases_today,
+    spend: (r) => formatCurrency(r.spend, currency),
+    purchases: (r) => r.purchases,
     cpa: (r) => {
-      const v = costPerPurchaseValue(r.spend_today, r.purchases_today);
+      const v = costPerPurchaseValue(r.spend, r.purchases);
       return v != null ? formatCurrency(v, currency) : "—";
     },
   };
@@ -419,6 +508,7 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
             </option>
           ))}
         </select>
+        <QuickDateRange since={since} until={until} onChange={onDateRangeChange} />
         <button onClick={refreshCurrentLevel} disabled={loading || !accountId} className="btn-secondary flex items-center gap-1.5 py-1.5 px-3 text-xs">
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           Atualizar
@@ -441,39 +531,68 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
         ))}
       </div>
 
+      {level === "campaigns" && campaigns && (
+        <StatusFilterChips
+          rows={campaigns}
+          selected={statusFilterCampaigns}
+          onToggle={(s) => toggleStatusFilter(statusFilterCampaigns, setStatusFilterCampaigns, s)}
+          onClear={() => setStatusFilterCampaigns(new Set())}
+        />
+      )}
+
       {level === "adsets" && (
-        <p className="text-xs text-[var(--text-muted)]">
-          {checkedCampaigns.size > 0 ? (
-            <>
-              Mostrando conjuntos de {checkedCampaigns.size} campanha(s) selecionada(s).{" "}
-              <button
-                onClick={() => { setCheckedCampaigns(new Set()); loadAdsets(); }}
-                className="inline-flex items-center gap-1 underline hover:text-[var(--text)]"
-              >
-                <X size={10} /> limpar filtro
-              </button>
-            </>
-          ) : (
-            "Mostrando todos os conjuntos da conta (marque campanhas na aba Campanhas pra filtrar)."
+        <>
+          <p className="text-xs text-[var(--text-muted)]">
+            {checkedCampaigns.size > 0 ? (
+              <>
+                Mostrando conjuntos de {checkedCampaigns.size} campanha(s) selecionada(s).{" "}
+                <button
+                  onClick={() => { setCheckedCampaigns(new Set()); loadAdsets(); }}
+                  className="inline-flex items-center gap-1 underline hover:text-[var(--text)]"
+                >
+                  <X size={10} /> limpar filtro de campanha
+                </button>
+              </>
+            ) : (
+              "Mostrando todos os conjuntos da conta (marque campanhas na aba Campanhas pra filtrar)."
+            )}
+          </p>
+          {adsets && (
+            <StatusFilterChips
+              rows={adsets}
+              selected={statusFilterAdsets}
+              onToggle={(s) => toggleStatusFilter(statusFilterAdsets, setStatusFilterAdsets, s)}
+              onClear={() => setStatusFilterAdsets(new Set())}
+            />
           )}
-        </p>
+        </>
       )}
       {level === "ads" && (
-        <p className="text-xs text-[var(--text-muted)]">
-          {checkedAdsets.size > 0 ? (
-            <>
-              Mostrando anúncios de {checkedAdsets.size} conjunto(s) selecionado(s).{" "}
-              <button
-                onClick={() => { setCheckedAdsets(new Set()); loadAds(); }}
-                className="inline-flex items-center gap-1 underline hover:text-[var(--text)]"
-              >
-                <X size={10} /> limpar filtro
-              </button>
-            </>
-          ) : (
-            "Mostrando todos os anúncios da conta (marque conjuntos na aba Conjuntos de anúncio pra filtrar)."
+        <>
+          <p className="text-xs text-[var(--text-muted)]">
+            {checkedAdsets.size > 0 ? (
+              <>
+                Mostrando anúncios de {checkedAdsets.size} conjunto(s) selecionado(s).{" "}
+                <button
+                  onClick={() => { setCheckedAdsets(new Set()); loadAds(); }}
+                  className="inline-flex items-center gap-1 underline hover:text-[var(--text)]"
+                >
+                  <X size={10} /> limpar filtro de conjunto
+                </button>
+              </>
+            ) : (
+              "Mostrando todos os anúncios da conta (marque conjuntos na aba Conjuntos de anúncio pra filtrar)."
+            )}
+          </p>
+          {ads && (
+            <StatusFilterChips
+              rows={ads}
+              selected={statusFilterAds}
+              onToggle={(s) => toggleStatusFilter(statusFilterAds, setStatusFilterAds, s)}
+              onClear={() => setStatusFilterAds(new Set())}
+            />
           )}
-        </p>
+        </>
       )}
 
       {message && (
@@ -533,7 +652,7 @@ export function AdsManagerTab({ accounts }: { accounts: AdAccountOption[] }) {
                 {!loadingCampaigns && sortedCampaigns.length === 0 && (
                   <tr>
                     <td colSpan={3 + campaignCols.orderedVisible.length} className="px-4 py-10 text-center text-[var(--text-muted)]">
-                      Nenhuma campanha encontrada nessa conta.
+                      Nenhuma campanha encontrada nessa conta/período.
                     </td>
                   </tr>
                 )}

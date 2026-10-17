@@ -7,6 +7,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: accountId } = await params;
+  const url = new URL(request.url);
+  const since = url.searchParams.get("since") || todayISO();
+  const until = url.searchParams.get("until") || todayISO();
 
   const token = await resolveAccountToken(accountId);
   if (!token) {
@@ -14,20 +17,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const today = todayISO();
     const [campaigns, insights] = await Promise.all([
       fetchCampaignsForAccount(accountId, token),
-      fetchObjectDailyInsights(accountId, token, "campaign", today, today),
+      fetchObjectDailyInsights(accountId, token, "campaign", since, until),
     ]);
 
-    const insightByCampaign = new Map(insights.map((row) => [row.campaign_id, row]));
+    // Em período de mais de 1 dia, fetchObjectDailyInsights volta uma linha
+    // por dia — precisa somar antes de juntar com a campanha.
+    const insightById = new Map<string, { spend: number; purchases: number }>();
+    for (const row of insights) {
+      const agg = insightById.get(row.campaign_id) ?? { spend: 0, purchases: 0 };
+      agg.spend += Number(row.spend ?? 0);
+      agg.purchases += actionCount(row.actions, "purchase");
+      insightById.set(row.campaign_id, agg);
+    }
 
     const data = campaigns.map((c) => {
-      const insight = insightByCampaign.get(c.id);
+      const agg = insightById.get(c.id);
       return {
         ...c,
-        spend_today: Number(insight?.spend ?? 0),
-        purchases_today: actionCount(insight?.actions, "purchase"),
+        spend: agg?.spend ?? 0,
+        purchases: agg?.purchases ?? 0,
       };
     });
 

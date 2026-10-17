@@ -18,8 +18,11 @@ export const dynamic = "force-dynamic";
 // nível anterior e navega pro nível "Conjuntos de anúncio".
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: accountId } = await params;
-  const campaignIdsParam = new URL(request.url).searchParams.get("campaignIds");
+  const url = new URL(request.url);
+  const campaignIdsParam = url.searchParams.get("campaignIds");
   const campaignIds = campaignIdsParam ? campaignIdsParam.split(",").filter(Boolean) : [];
+  const since = url.searchParams.get("since") || todayISO();
+  const until = url.searchParams.get("until") || todayISO();
 
   const token = await resolveAccountToken(accountId);
   if (!token) {
@@ -27,23 +30,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const today = todayISO();
     const [adsets, insights] = await Promise.all([
       campaignIds.length > 0
         ? Promise.all(campaignIds.map((id) => fetchAdSetsForCampaign(id, token))).then((lists) => lists.flat())
         : fetchAdSetsForAccount(accountId, token),
-      fetchObjectDailyInsights(accountId, token, "adset", today, today),
+      fetchObjectDailyInsights(accountId, token, "adset", since, until),
     ]);
 
-    const insightByAdSet = new Map(insights.map((row) => [row.adset_id, row]));
+    const insightById = new Map<string, { spend: number; purchases: number }>();
+    for (const row of insights) {
+      if (!row.adset_id) continue;
+      const agg = insightById.get(row.adset_id) ?? { spend: 0, purchases: 0 };
+      agg.spend += Number(row.spend ?? 0);
+      agg.purchases += actionCount(row.actions, "purchase");
+      insightById.set(row.adset_id, agg);
+    }
 
     const data = adsets.map((a) => {
-      const insight = insightByAdSet.get(a.id);
+      const agg = insightById.get(a.id);
       return {
         ...a,
         campaign_name: a.campaign?.name ?? null,
-        spend_today: Number(insight?.spend ?? 0),
-        purchases_today: actionCount(insight?.actions, "purchase"),
+        spend: agg?.spend ?? 0,
+        purchases: agg?.purchases ?? 0,
       };
     });
 
