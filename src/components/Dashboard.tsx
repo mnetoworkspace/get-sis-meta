@@ -16,8 +16,9 @@ import { DepositsTab } from "@/components/tables/DepositsTab";
 import { AccountMultiSelect } from "@/components/ui/account-multi-select";
 import { PushNotificationToggle } from "@/components/push/push-notification-toggle";
 import { MobileNavMenu } from "@/components/ui/mobile-nav-menu";
+import { AdsManagerTab } from "@/components/AdsManagerTab";
 
-type Tab = "bm" | "account" | "detailed" | "traffic";
+type Tab = "bm" | "account" | "detailed" | "traffic" | "ads";
 
 interface AdAccountOption {
   id: string;
@@ -46,6 +47,7 @@ const TABS: { key: Tab; label: string; shortLabel?: string }[] = [
   { key: "account", label: "Por Conta" },
   { key: "detailed", label: "Detalhado (campanha / conjunto / anúncio)", shortLabel: "Detalhado" },
   { key: "traffic", label: "Tráfego e Depósitos", shortLabel: "Tráfego" },
+  { key: "ads", label: "Gerenciar Anúncios", shortLabel: "Anúncios" },
 ];
 
 function aggregateTotals(rows: SpendRow[]): PeriodTotals {
@@ -348,34 +350,36 @@ export default function Dashboard() {
       </header>
 
       <main className="page-shell px-4 py-6 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-center gap-3 card p-4">
-          <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
+        {tab !== "ads" && (
+          <div className="mb-6 flex flex-wrap items-center gap-3 card p-4">
+            <QuickDateRange since={since} until={until} onChange={(s, u) => { setSince(s); setUntil(u); }} />
 
-          {tab === "bm" ? (
-            <select value={bmFilter} onChange={(e) => setBmFilter(e.target.value)} className="input">
-              <option value="">Todos os BMs</option>
-              {bms.map((bm) => (
-                <option key={bm.id} value={bm.id}>
-                  {bm.name}
-                </option>
-              ))}
-            </select>
-          ) : tab !== "traffic" ? (
-            <AccountMultiSelect accounts={accounts} selected={accountFilters} onChange={setAccountFilters} />
-          ) : null}
+            {tab === "bm" ? (
+              <select value={bmFilter} onChange={(e) => setBmFilter(e.target.value)} className="input">
+                <option value="">Todos os BMs</option>
+                {bms.map((bm) => (
+                  <option key={bm.id} value={bm.id}>
+                    {bm.name}
+                  </option>
+                ))}
+              </select>
+            ) : tab !== "traffic" ? (
+              <AccountMultiSelect accounts={accounts} selected={accountFilters} onChange={setAccountFilters} />
+            ) : null}
 
-          <div className="flex w-full flex-col items-end gap-1 sm:ml-auto sm:w-auto">
-            <button onClick={handleSync} disabled={syncing} className="btn-primary flex w-full items-center justify-center gap-2 sm:w-auto">
-              <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
-              {syncing ? "Sincronizando..." : "Sincronizar agora"}
-            </button>
-            {lastSync && (
-              <span className="text-right text-xs text-[var(--text-muted)]">
-                Última sync: {new Date(lastSync.started_at).toLocaleString("pt-BR")} ({lastSync.status})
-              </span>
-            )}
+            <div className="flex w-full flex-col items-end gap-1 sm:ml-auto sm:w-auto">
+              <button onClick={handleSync} disabled={syncing} className="btn-primary flex w-full items-center justify-center gap-2 sm:w-auto">
+                <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "Sincronizando..." : "Sincronizar agora"}
+              </button>
+              {lastSync && (
+                <span className="text-right text-xs text-[var(--text-muted)]">
+                  Última sync: {new Date(lastSync.started_at).toLocaleString("pt-BR")} ({lastSync.status})
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {syncMessage && (
           <div
@@ -389,7 +393,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {compare && (
+        {tab !== "ads" && compare && (
           <StatsSummary
             current={compare.current}
             previous={compare.previous}
@@ -398,14 +402,16 @@ export default function Dashboard() {
           />
         )}
 
-        <ForecastCard
-          key={`${tab}:${bmFilter}:${accountFilters.join(",")}:${forecastRefreshKey}`}
-          since={since}
-          until={until}
-          bmId={tab === "bm" ? bmFilter : undefined}
-          accountIds={tab !== "bm" ? accountFilters.join(",") : undefined}
-          refreshKey={forecastRefreshKey}
-        />
+        {tab !== "ads" && (
+          <ForecastCard
+            key={`${tab}:${bmFilter}:${accountFilters.join(",")}:${forecastRefreshKey}`}
+            since={since}
+            until={until}
+            bmId={tab === "bm" ? bmFilter : undefined}
+            accountIds={tab !== "bm" ? accountFilters.join(",") : undefined}
+            refreshKey={forecastRefreshKey}
+          />
+        )}
 
         <div className="mb-4 flex w-fit max-w-full flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1">
           {TABS.map((t) => (
@@ -434,7 +440,9 @@ export default function Dashboard() {
             desmontar aqui reseta a config de colunas (ordem/visibilidade)
             porque o efeito que carrega do localStorage não chega a assentar
             antes do remount seguinte. */}
-        {tab === "traffic" ? (
+        {tab === "ads" ? (
+          <AdsManagerTab accounts={accounts} />
+        ) : tab === "traffic" ? (
           <div className="space-y-8">
             <div>
               <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">

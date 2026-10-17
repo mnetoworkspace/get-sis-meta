@@ -234,6 +234,11 @@ export interface MetaAction {
   value: string;
 }
 
+export function actionCount(actions: MetaAction[] | undefined, actionType: string): number {
+  const found = actions?.find((a) => a.action_type === actionType);
+  return found ? Number(found.value) : 0;
+}
+
 const ACCOUNT_INSIGHT_FIELDS =
   "spend,impressions,clicks,reach,frequency,inline_link_clicks,cpc,cpm,ctr,actions,cost_per_action_type";
 
@@ -584,7 +589,15 @@ export interface DuplicateAdSetResult {
 // recria o criativo em si, só referencia o creative_id existente). Anúncios
 // sem criativo (nunca deveria acontecer, mas a API não garante) são pulados
 // em vez de falhar a duplicação inteira.
-export async function duplicateAdSet(adsetId: string, adAccountId: string, token: string): Promise<DuplicateAdSetResult> {
+// "targetCampaignId" é opcional — só usado quando a chamada vem de dentro de
+// duplicateCampaign (duplicar a campanha inteira), pra jogar a cópia do
+// conjunto na campanha nova em vez da original.
+export async function duplicateAdSet(
+  adsetId: string,
+  adAccountId: string,
+  token: string,
+  targetCampaignId?: string,
+): Promise<DuplicateAdSetResult> {
   const config = await fetchAdSetFullConfig(adsetId, token);
   const ads = await fetchAdSetAds(adsetId, token);
 
@@ -595,7 +608,7 @@ export async function duplicateAdSet(adsetId: string, adAccountId: string, token
     adAccountId,
     {
       name: newName,
-      campaign_id: config.campaign_id,
+      campaign_id: targetCampaignId ?? config.campaign_id,
       daily_budget: config.daily_budget,
       lifetime_budget: config.lifetime_budget,
       bid_amount: config.bid_amount,
@@ -681,6 +694,174 @@ export async function fetchRejectedAds(adAccountId: string, token: string): Prom
     access_token: token,
     limit: "200",
   });
+}
+
+// --- Painel de gerenciamento manual (ver src/app/ads) ---
+// Lista campanha/conjunto/anúncio sem filtrar por status — a Graph API já
+// exclui ARCHIVED/DELETED por padrão nesses edges (sem precisar de
+// "filtering" explícito), então isso aqui traz ACTIVE e PAUSED, igual a
+// visão padrão do próprio Ads Manager.
+
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  objective: string;
+  effective_status: string;
+  daily_budget?: string | null;
+  lifetime_budget?: string | null;
+}
+
+export async function fetchCampaignsForAccount(adAccountId: string, token: string): Promise<CampaignSummary[]> {
+  return graphGetAllPages<CampaignSummary>(`/${adAccountId}/campaigns`, {
+    fields: "id,name,objective,effective_status,daily_budget,lifetime_budget",
+    access_token: token,
+    limit: "200",
+  });
+}
+
+export interface AdSetSummary {
+  id: string;
+  name: string;
+  campaign_id: string;
+  effective_status: string;
+  daily_budget?: string | null;
+  lifetime_budget?: string | null;
+}
+
+export async function fetchAdSetsForCampaign(campaignId: string, token: string): Promise<AdSetSummary[]> {
+  return graphGetAllPages<AdSetSummary>(`/${campaignId}/adsets`, {
+    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget",
+    access_token: token,
+    limit: "200",
+  });
+}
+
+// Todos os conjuntos da conta de uma vez (sem filtrar por campanha) — usado
+// quando a pessoa está no nível "Conjuntos de anúncio" do painel sem ter
+// marcado nenhuma campanha específica pra filtrar, igual o próprio Ads
+// Manager mostra tudo da conta se nada tá selecionado.
+export async function fetchAdSetsForAccount(adAccountId: string, token: string): Promise<AdSetSummary[]> {
+  return graphGetAllPages<AdSetSummary>(`/${adAccountId}/adsets`, {
+    fields: "id,name,campaign_id,effective_status,daily_budget,lifetime_budget",
+    access_token: token,
+    limit: "200",
+  });
+}
+
+export interface AdSummary {
+  id: string;
+  name: string;
+  adset_id: string;
+  effective_status: string;
+  creative?: { id: string; thumbnail_url?: string };
+}
+
+export async function fetchAdsForAdSet(adsetId: string, token: string): Promise<AdSummary[]> {
+  return graphGetAllPages<AdSummary>(`/${adsetId}/ads`, {
+    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url}",
+    access_token: token,
+    limit: "200",
+  });
+}
+
+// Todos os anúncios da conta de uma vez (sem filtrar por conjunto) — mesmo
+// motivo do fetchAdSetsForAccount acima, pro nível "Anúncios" sem conjunto
+// marcado.
+export async function fetchAdsForAccount(adAccountId: string, token: string): Promise<AdSummary[]> {
+  return graphGetAllPages<AdSummary>(`/${adAccountId}/ads`, {
+    fields: "id,name,adset_id,effective_status,creative{id,thumbnail_url}",
+    access_token: token,
+    limit: "200",
+  });
+}
+
+// --- Duplicação de campanha inteira (ação manual do painel) ---
+// A Graph API não tem endpoint de "duplicar campanha" pronto — igual
+// duplicateAdSet, lê a config completa e recria, e aqui também duplica cada
+// conjunto ativo/pausado dela (reaproveitando duplicateAdSet por conjunto,
+// só redirecionando pra campanha nova).
+
+const CAMPAIGN_FULL_FIELDS =
+  "id,name,objective,status,special_ad_categories,buying_type,daily_budget,lifetime_budget,bid_strategy";
+
+export interface CampaignFullConfig {
+  id: string;
+  name: string;
+  objective: string;
+  status: string;
+  special_ad_categories?: string[];
+  buying_type?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  bid_strategy?: string;
+}
+
+export async function fetchCampaignFullConfig(campaignId: string, token: string): Promise<CampaignFullConfig> {
+  return graphGet<CampaignFullConfig>(`/${campaignId}`, { fields: CAMPAIGN_FULL_FIELDS, access_token: token });
+}
+
+interface CreateCampaignInput {
+  name: string;
+  objective: string;
+  special_ad_categories?: string[];
+  buying_type?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  bid_strategy?: string;
+  status: "ACTIVE" | "PAUSED";
+}
+
+export async function createCampaign(adAccountId: string, input: CreateCampaignInput, token: string): Promise<{ id: string }> {
+  const params: Record<string, string> = {
+    name: input.name,
+    objective: input.objective,
+    status: input.status,
+    special_ad_categories: JSON.stringify(input.special_ad_categories ?? []),
+    access_token: token,
+  };
+  if (input.buying_type) params.buying_type = input.buying_type;
+  if (input.daily_budget) params.daily_budget = input.daily_budget;
+  if (input.lifetime_budget) params.lifetime_budget = input.lifetime_budget;
+  if (input.bid_strategy) params.bid_strategy = input.bid_strategy;
+
+  return graphPost<{ id: string }>(`/${adAccountId}/campaigns`, params);
+}
+
+export interface DuplicateCampaignResult {
+  newCampaignId: string;
+  adSets: DuplicateAdSetResult[];
+}
+
+export async function duplicateCampaign(
+  campaignId: string,
+  adAccountId: string,
+  token: string,
+): Promise<DuplicateCampaignResult> {
+  const config = await fetchCampaignFullConfig(campaignId, token);
+  const adsets = await fetchAdSetsForCampaign(campaignId, token);
+
+  const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+  const newCampaign = await createCampaign(
+    adAccountId,
+    {
+      name: `${config.name} - Dup ${timestamp}`,
+      objective: config.objective,
+      special_ad_categories: config.special_ad_categories,
+      buying_type: config.buying_type,
+      daily_budget: config.daily_budget,
+      lifetime_budget: config.lifetime_budget,
+      bid_strategy: config.bid_strategy,
+      status: "ACTIVE",
+    },
+    token,
+  );
+
+  const adSets: DuplicateAdSetResult[] = [];
+  for (const adset of adsets) {
+    adSets.push(await duplicateAdSet(adset.id, adAccountId, token, newCampaign.id));
+  }
+
+  return { newCampaignId: newCampaign.id, adSets };
 }
 
 // Funciona pra campanha, conjunto ou anúncio — mesmo node de delete nos
